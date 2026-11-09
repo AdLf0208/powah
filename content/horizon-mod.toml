@@ -1,0 +1,12 @@
+# Slice 1 of the Powah port: the starter Furnator, Energy Cell and Energy Cable.
+# Assets and data are carried from the ATM10 jar (Powah-6.2.10.jar), with the
+# patches documented in README.md. Licence: LGPL-3.0-only (Technici4n/Powah);
+# local-only until the maintainer approves publishing.
+id = "powah"
+name = "Powah"
+version = "6.2.10"
+description = "Starter Furnator, Energy Cell and Energy Cable (slice 1)"
+authors = ["owmii", "Technici4n"]
+api = "0.2"
+side = "both"
+capabilities = ["registries"]
