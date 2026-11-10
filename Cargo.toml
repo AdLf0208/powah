@@ -1,0 +1,22 @@
+[package]
+# Ported from: Powah 6.2.10 (Technici4n/Powah, LGPL-3.0-only), Minecraft Java
+# 1.21.1 NeoForge. Clean-room Rust rewrite. Local-only until the maintainer
+# approves publishing; LGPL-3.0-only allows redistribution under the same
+# licence with the complete corresponding source.
+name = "horizon-powah"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "LGPL-3.0-only"
+description = "Powah for Horizon, slice 1: the starter Furnator, Energy Cell and Energy Cable"
+
+[lib]
+# This exact source is also injected as a same-crate module by horizon-mixins.
+path = "mixins/powah/runtime.rs"
+
+[dependencies]
+serde_json = "1"
+
+[workspace]
+members = ["tools/audit"]
+resolver = "2"
