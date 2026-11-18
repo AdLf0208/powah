@@ -1,77 +1,63 @@
-# Powah for Horizon — slice 1
+# Powah! (Rearchitected) — a Horizon port
 
-A clean-room Rust rewrite of **Powah! (Rearchitected) 6.2.10** (`Technici4n/Powah`,
-**LGPL-3.0-only**) for Horizon 26.3, as one flat SDK package (`api = "0.2"`): the
-carried content (`assets/`, `data/`) and the behaviour (`src/`) ship in the same
-`.hmod`. Slice 1 is the starter tier of the energy chain:
+**Powah! (Rearchitected)** is a Minecraft mod. Discussion on the AE2 Discord server:. This repository is a **port of it to [Horizon](https://github.com/horizon-rust/horizon)**, the Rust engine for Minecraft Java 26.3. It carries the complete source of the port plus the content files it ships, and installs as a single `.hmod` package.
 
-| Block | What it does |
+Upstream: [Technici4n/Powah](https://github.com/Technici4n/Powah) — licence **LGPL-3.0-only**.
+
+| | |
 |---|---|
-| `powah:furnator_starter` | burns furnace fuel into a carbon buffer and makes 20 FE/t into a 20,000 FE buffer (48,000 FE per coal) |
-| `powah:energy_cell_starter` | a 1,000,000 FE capacitor, 1,000 FE/t per side |
-| `powah:energy_cable_starter` | moves FE between the block entities beside it, 500 FE/t, storing nothing |
+| Upstream mod | Powah! (Rearchitected) ([source](https://github.com/Technici4n/Powah)) |
+| Ported to | Horizon 0b14f8a, Minecraft Java 26.3, mod API `0.2` |
+| Package | `powah.hmod` (install it with the Horizon launcher) |
+| Licence | **LGPL-3.0-only** — the upstream mod's licence; see [Licence and credit](#licence-and-credit) |
 
-All three declare a real `Capabilities.Energy.BLOCK` buffer (the amount is the int
-`energy` in the block entity's saved compound), so other machines can fill and
-drain the furnator and the cell; the cable is a pure relay.
+## What this port implements
 
-- Scope, behaviour table, the hook table, deviations and the gap list:
-  [`notes.md`](notes.md); upstream analysis: [`FINDINGS.md`](FINDINGS.md);
-  content carry and the patches: [`CONTENT.md`](CONTENT.md).
-- Verification: [`VALIDATION.md`](VALIDATION.md).
-- Licence: **LGPL-3.0-only** (rank 1, copyleft — publishable under the same
-  licence with its complete source; local-only until the maintainer approves
-  publishing, ARCHITECTURE.md §8).
+- **Furnator** (`powah:furnator_starter`): burns furnace fuel into a carbon
+- **Energy Cell** (`powah:energy_cell_starter`): a 1,000,000 FE capacitor that
+- **Energy Cable** (`powah:energy_cable_starter`): moves FE between the block
 
-## Layout
+## Not yet ported
 
-```text
-powah.hmod            the delivered package (horizon-mod.toml + Cargo.toml + src/ + assets/ + data/)
-horizon-mod.toml      the only manifest and identity: id, version 0.2.0, api 0.2, [native] pins
-Cargo.toml            one crate; its only dependency is horizon-mod-api from .horizon/sdk/
-src/lib.rs            the one `#[mod_api::horizon_mod] impl Hooks`
-src/powah.rs          the glue: the three block entity Parts, the queue, the buffers, the command
-src/runtime.rs        the pure machine rules and their tests (no mod_api types)
-assets/powah/         the carried blockstates, models, items, textures and lang
-data/powah/           the carried blocks, loot, recipes, tags, the creative tab
-tools/e2e.sh          the in-game scenario (needs a launcher-built game, see below)
-```
+- **No GUI.** Upstream opens a container screen for the furnator/cell/cable;
+- **No cable network.** Upstream's cables share one buffer across a connected
+- **Two adjacent cells swap energy.** Both push on every side by default (as
+- **No item charging.** Upstream's furnator charges slot 0 and a cell charges
+- **Breaking a machine loses its FE.** Upstream's `keepEnergy()` makes the
+- **No side config or redstone modes.** Upstream's six per-side transfer types
+- **No comparator output.** `comparator_strength` is computed and printed, but
+- **`lit`/`burning` is not a block state** (upstream's `burning` is a client
 
-## Build and check
+## Installing
 
-The SDK is fetched into `.horizon/sdk/` (gitignored) by the first
-`cargo horizon-mod` command; a port that is offline can copy it from another
-migrated port at the same pin.
+1. Install the [Horizon launcher](https://github.com/horizon-rust/horizon/releases) (0.2.70 or newer).
+2. Add `powah.hmod` to the instance's mods.
+3. The package is pinned to a specific Horizon build; the launcher checks that pin.
 
-```sh
-cd ports/powah
-CARGO_INCREMENTAL=0 cargo test                        # the pure rules and the glue's declarations
-CARGO_INCREMENTAL=0 cargo clippy --all-targets -- -D warnings
-cargo fmt --check
-rm -f Cargo.lock                                      # a packed lock changes the artifact
-CARGO_INCREMENTAL=0 cargo horizon-mod build           # -> target/horizon-mod/powah.hmod
-cargo horizon-mod check powah.hmod                    # the registry's own check
-cargo horizon-mod fits powah.hmod --build nightly     # does it still fit that build
-```
+## Licence and credit
 
-## In-game observability
+Powah! (Rearchitected) was created by its upstream authors; the code, models and assets in the original mod
+remain theirs and are used here under **LGPL-3.0-only**. The Rust in this repository is a clean-room
+rewrite for Horizon, not a translation of the original source.
 
-Slice 1 has no GUI, so the port adds two commands (recorded as harness additions,
-not upstream gameplay):
+- `LICENSE` — the upstream licence text.
+- `LICENSE-NOTICE.md` — what this port carries and where it came from.
+- The upstream project: https://github.com/Technici4n/Powah
+
+## Technical details
 
 ```
-/powah info <x> <y> <z>          # FE, carbon, burn state, capacity, comparator
-/powah set <amount> <x> <y> <z>  # set a furnator's or a cell's stored FE
+horizon-mod.toml   package manifest (id, version, api, [native] pin)
+Cargo.toml         the crate; depends on `horizon-mod-api` from the fetched SDK
+src/               lib.rs (the one `impl Hooks`), runtime.rs (pure logic + tests), glue
+assets/ data/      the content the package ships
+tools/             content generators and the e2e scenario
 ```
 
-## Running the in-game check
+- Build: `cargo horizon-mod build` (packages; it does not compile against the game).
+- Test: `cargo test`, `cargo clippy --all-targets -- -D warnings`.
+- In-game: `ports/tools/launcher-game.sh run powah` in the campaign tree, or install the
+  `.hmod` and play; the harness scenario is `tools/e2e.sh`.
 
-A native package is compiled **into** the client by the launcher, so the check
-needs a game built with this package:
-
-```sh
-horizon-launcher native-build ports/powah --instance <instance> --trust-native-code
-GAME=<that instance's horizon-client> tools/e2e.sh
-GAME=<that game> CONTROL_GAME=<an unmodified build> tools/e2e.sh   # the negative leg
-SELFTEST=1 GAME=<that game> tools/e2e.sh                           # the fail-capable leg
-```
+This repository is generated from the campaign's port at `ports/powah/`; the port's own
+`notes.md` is the full record (decisions, traps, evidence).
