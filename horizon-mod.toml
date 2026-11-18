@@ -1,0 +1,31 @@
+# Slice 1 of the Powah port, as one flat SDK package: the carried blocks, items, models,
+# textures, recipes, loot, tags and lang are the `assets/` and `data/` beside `src/`, and the
+# behaviour is the one `impl Hooks` there. Licence: LGPL-3.0-only (Technici4n/Powah); the full
+# text and its provenance are in LICENSE and LICENSE-NOTICE.md inside this package. Local-only
+# until the maintainer approves publishing (ARCHITECTURE.md §8).
+id = "powah"
+name = "Powah"
+version = "0.2.0"
+description = """A port of Powah! (Rearchitected) for Horizon, slice 1: the starter tier of the energy
+chain. The Furnator burns a furnace fuel into carbon and makes 20 FE/t into a 20,000 FE buffer
+(one coal is 48,000 FE); the Energy Cell is a 1,000,000 FE capacitor that takes and gives 1,000
+FE a side; the Energy Cable moves up to 500 FE/t between the block entities beside it and stores
+nothing. All three declare a real block energy capability, so other machines can fill and drain
+them. `/powah info|set` are the harness controls (slice 1 has no GUI). Not yet ported: the other
+six tiers, the creative cell, the remaining machines, Energizing, item charging, side config,
+redstone modes and the GUIs."""
+authors = ["owmii", "Technici4n", "AdLf0208"]
+# A native mod: Rust in src/, compiled by the launcher against the game build [native] pins,
+# beside the carried assets/ and data/. The id is the resource namespace and the only identity.
+api = "0.2"
+# "both" is the installation side, not a hook's: the machines run on the server, and a LAN host
+# or single-player world runs it inside the client installation.
+side = "both"
+# The one shared value every manifest carries ("May add blocks, items, mob effects and entity
+# types"); this package's content declares three blocks, their items and three block entity types.
+capabilities = ["registries"]
+
+[native]
+game = "26.3"
+horizon = "0b14f8acfd97fa2c750e42795249dcc981178ca4"
+mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"

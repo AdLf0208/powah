@@ -1,0 +1,9 @@
+{
+  "title": "itemGroup.powah.tab",
+  "icon": "powah:energy_cell_starter",
+  "items": [
+    "powah:furnator_starter",
+    "powah:energy_cell_starter",
+    "powah:energy_cable_starter"
+  ]
+}
