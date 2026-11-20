@@ -1,0 +1,19 @@
+[package]
+# Port of Powah! (Rearchitected) 6.2.10 (Technici4n/Powah, LGPL-3.0-only) to Horizon 26.3
+# at the pin in horizon-mod.toml. Clean-room Rust rewrite from the mod's behaviour
+# (FINDINGS.md); local-only until publishing is approved, publishable under the LGPL
+# with this complete corresponding source.
+#
+# Cargo's name and version are not the mod's identity: horizon-mod.toml is.
+name = "powah"
+version = "0.2.2"
+edition = "2024"
+license = "LGPL-3.0-only"
+description = "Powah for Horizon, slice 1: the starter Furnator, Energy Cell and Energy Cable"
+publish = false
+
+[dependencies]
+# The pinned SDK's API crate, fetched into .horizon/sdk/ by any `cargo horizon-mod` command
+# (the launcher builds against its own copy of the same build). Any other registry dependency
+# must be pinned with `horizon-launcher native-lock .` before building.
+horizon-mod-api = { path = ".horizon/sdk/api/crates/horizon-mod-api" }

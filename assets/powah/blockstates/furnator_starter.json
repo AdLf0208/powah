@@ -1,0 +1,34 @@
+{
+  "variants": {
+    "facing=north,lit=false": {
+      "model": "powah:block/furnator_starter"
+    },
+    "facing=north,lit=true": {
+      "model": "powah:block/furnator_starter"
+    },
+    "facing=south,lit=false": {
+      "model": "powah:block/furnator_starter",
+      "y": 180
+    },
+    "facing=south,lit=true": {
+      "model": "powah:block/furnator_starter",
+      "y": 180
+    },
+    "facing=west,lit=false": {
+      "model": "powah:block/furnator_starter",
+      "y": 270
+    },
+    "facing=west,lit=true": {
+      "model": "powah:block/furnator_starter",
+      "y": 270
+    },
+    "facing=east,lit=false": {
+      "model": "powah:block/furnator_starter",
+      "y": 90
+    },
+    "facing=east,lit=true": {
+      "model": "powah:block/furnator_starter",
+      "y": 90
+    }
+  }
+}

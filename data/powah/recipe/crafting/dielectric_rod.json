@@ -1,0 +1,7 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": ["pip", "pip", "pip"],
+  "key": { "p": "powah:dielectric_paste", "i": "minecraft:iron_bars" },
+  "result": { "count": 8, "id": "powah:dielectric_rod" }
+}

@@ -1,0 +1,15 @@
+{
+  "title": "itemGroup.powah.tab",
+  "icon": "powah:energy_cell_starter",
+  "items": [
+    "powah:furnator_starter",
+    "powah:energy_cell_starter",
+    "powah:energy_cable_starter",
+    "powah:dielectric_paste",
+    "powah:dielectric_rod",
+    "powah:dielectric_rod_horizontal",
+    "powah:dielectric_casing",
+    "powah:capacitor_basic",
+    "powah:capacitor_basic_tiny"
+  ]
+}

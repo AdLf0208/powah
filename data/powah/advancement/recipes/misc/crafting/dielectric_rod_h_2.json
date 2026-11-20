@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_dielectric_rod": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:dielectric_rod"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "powah:crafting/dielectric_rod_h_2"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_dielectric_rod"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "powah:crafting/dielectric_rod_h_2"
+    ]
+  }
+}

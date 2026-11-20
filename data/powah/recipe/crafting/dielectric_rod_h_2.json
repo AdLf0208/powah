@@ -1,0 +1,6 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": ["powah:dielectric_rod"],
+  "result": { "count": 1, "id": "powah:dielectric_rod_horizontal" }
+}

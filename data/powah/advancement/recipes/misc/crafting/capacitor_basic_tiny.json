@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_capacitor_basic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:capacitor_basic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "powah:crafting/capacitor_basic_tiny"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_capacitor_basic"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "powah:crafting/capacitor_basic_tiny"
+    ]
+  }
+}

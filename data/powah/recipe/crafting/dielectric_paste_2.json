@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    "#minecraft:coals",
+    "#minecraft:coals",
+    "minecraft:clay_ball",
+    "minecraft:blaze_powder"
+  ],
+  "result": { "count": 16, "id": "powah:dielectric_paste" }
+}
