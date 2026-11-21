@@ -1,5 +1,13 @@
-# Validation — Powah slices 1, 2 and 3
+# Validation — Powah slices 1 to 4
 
+> **0.2.4 (slice 4, the energy cell ladder)** is recorded in
+> [`notes.md`](notes.md#slice-4--the-energy-cell-ladder-2026-11-21): the slice and its gap line, the red
+> proof (three `todo!()` tests, 28 passed / 3 failed, plus the 0.2.3 package failing at the first new
+> tier), the ladder at pin `0a875da` (32 tests, clippy 0 warnings, `fmt --check` clean, two
+> byte-identical builds of 119,200 B, `check`, `fits` against the pin **and** against `0b14f8a`, gate
+> 1/1 with 134 entries) and the in-game legs (main `PASS`+`EXIT:0`, control / `SELFTEST=1` /
+> `SELFTEST=cells` at `EXIT:1`). Package: `powah.hmod`, 119,200 B, sha256
+> `663465ee8b93e5f8be371537f6515bd7252651e462a57f477faedd82ffcd3e34`.
 > **0.2.3 (slice 3, the cable network)** is recorded in [`notes.md`](notes.md#slice-3--the-cable-network-2026-11-21):
 > the slice and its gap line, the red proof (five `todo!()` tests, 23 passed / 5 failed), the
 > ladder at pin `0a875da` (28 tests, clippy 0 warnings, `fmt --check` clean, two byte-identical

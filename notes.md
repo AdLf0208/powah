@@ -259,7 +259,9 @@ round trip in this environment is ~2 s, far longer than a tick).
    names the slice's three blocks; upstream also draws arms to any other mod's
    FE block.
 10. **Crafting is not possible yet**: the recipes need later-slice items.
-11. **The other 6 tiers, the creative cell and ~15 machines** are unported.
+11. **The other 6 tiers, the creative cell and ~15 machines** are unported. — the
+    **energy cell** tiers are closed by [`## Slice 4 — the energy cell ladder`](#slice-4--the-energy-cell-ladder-2026-11-21);
+    the furnator and cable tiers, the creative cell and the machines remain.
 12. **`/powah set` is a harness control**, not upstream gameplay (same precedent
     as `/mekanism energy`).
 
@@ -1012,3 +1014,249 @@ Version: **0.2.2 → 0.2.3** (one patch), pin `0b14f8a` → `0a875da`. The publi
 not touch the registry entry.
 
 Skills: superpowers/using-superpowers, brainstorming, writing-plans, test-driven-development, verification-before-completion; BeautifulRust/rust-best-practices
+
+## Slice 4 — the energy cell ladder (2026-11-21)
+
+### The slice, quoted from this port's own gaps
+
+`## Deviations and gaps (slice 1)`, item 11 — the notes' own next-slice authority:
+
+> **11. The other 6 tiers, the creative cell and ~15 machines** are unported.
+
+and `FINDINGS.md` §"Tier numbering", whose derived table names the numbers this slice
+carries:
+
+> cell 1M/4M/10M/40M/100M/400M/2G
+
+**Chosen:** the six remaining **energy cell** tiers (`basic`, `hardened`, `blazing`,
+`niotic`, `spirited`, `nitro`) as storage blocks with their own capacity and per-side
+transfer — the ladder the starter cell's row already begins. **Why it fits
+`machines`:** a cell is the tier's shape exactly — a declared block energy capability
+(`Registrar::block_energy`) over the saved int `energy`, one block entity type and an
+idle tick, and the `push_out` the starter cell already runs; no new hook family, no
+renderer, no GUI, no item behaviour. Its rule is the most directly assertable in the
+package: `/powah set 2000000000` against each tier must clamp at **that tier's**
+capacity, so one command reads back a different exact number per tier (a
+before → after `ctl` readout that the 0.2.3 package fails outright: it does not know
+the ids).
+
+**Not chosen (and why):** the reactors (`FINDINGS.md` names them) need
+`powah:uraninite`, whose every source is the **unported Energizing Orb** or worldgen,
+so no reactor recipe could be crafted; the Magmator/Thermo generators need a fluid
+tank (`fluid_insert` cannot fill a mod BE tank at this pin, measured) and the Solar
+panel needs sky visibility; the other six **furnator/cable** tiers are the same shape
+as this slice but their rule is a rate into a buffer (a bound), not an exact readout.
+
+**Recipes:** the jar's `energy_cell_basic` recipe is craftable from carried items
+(`4 × capacitor_basic`, `dielectric_casing`, `4 × iron_ingot`), so it is carried and
+crafted in game. The other five cell recipes take `powah:steel_energized` /
+`powah:crystal_blazing|niotic|spirited|nitro`, which are only made by the unported
+**Energizing Orb**; those recipe files are **not carried** (a dead recipe is worse
+than a named gap) and the coverage table records `blocked(energizing-orb)` with the
+exact missing ids. Every tier block itself is placed, set and read in game.
+
+### What it ships
+
+| Family | Files |
+|---|---|
+| blocks (6) | `data/powah/horizon/block/energy_cell_{basic,hardened,blazing,niotic,spirited,nitro}.json` (the starter's patched def: `minecraft:iron_block`, 2.0/20.0, metal, `requires_tool`, `occludes: false`, stack 1) |
+| blockstates (6) | `assets/powah/blockstates/energy_cell_<tier>.json`, carried |
+| block models (6) | `assets/powah/models/block/energy_cell_<tier>.json` (parent `powah:block/energy_cell`, the tier's texture) |
+| item models (6) + item defs (6) | `assets/powah/models/item/…`, `assets/powah/items/…`, carried |
+| textures (6) | `assets/powah/textures/block/energy_cell_<tier>.png`, byte-for-byte |
+| loot (6) | `data/powah/loot_table/blocks/energy_cell_<tier>.json` (the jar's 26.3 shape) |
+| tags | the six join `minecraft:mineable/pickaxe` and `needs_iron_tool` |
+| creative tab | the six join `powah:horizon/creative_tab/machines.json` |
+| recipe + advancement (1 + 1) | `energy_cell_basic` only (see above) |
+
+Rust, all in the port's own tree:
+
+| File | Change |
+|---|---|
+| `src/runtime.rs` | `CellTier { capacity, transfer }`, `CELL_TIER_COUNT`, `cell_tier(index)` derived from upstream's `baseScaling` (`× 1_000_000` capacity, `× 1_000` transfer); 2 new tests |
+| `src/powah.rs` | `CELLS` (the seven ids + type names), `cell_of(id)`, `Kind::Cell(CellTier)`, `cell_battery(tier)`, per-tier `battery_of`/readout/set clamp/push cap; 2 new tests |
+| `src/lib.rs` | one `block_energy` declaration and one idle block entity type per cell tier (7 buffers, 9 types in total) |
+
+The readout gained the tier's transfer so the in-game leg can read it back:
+`Energy Cell at x,y,z: 4000000/4000000 FE (comparator 15, 4000 FE/t a side, t=739)`.
+The starter's line keeps its prefix (every 0.1.0/0.2.x assertion still matches) and
+the unit test that pins the exact line was updated.
+
+### TDD: the red proof, quoted
+
+`cell_tier` and `cell_of` were declared with `todo!()` and the tests written against
+them, then run (`ports/_shared/evidence/powah/slice4-test-red.log`):
+
+```text
+thread 'powah::tests::every_energy_cell_tier_is_one_of_the_ladder' panicked at src/powah.rs:74:5:
+not yet implemented: the energy cell block ids
+
+thread 'runtime::tests::every_energy_cell_tier_scales_upstreams_battery_numbers' panicked at src/runtime.rs:44:5:
+not yet implemented: the energy cell tier ladder
+
+thread 'runtime::tests::the_starter_cell_keeps_slice_1_s_numbers' panicked at src/runtime.rs:44:5:
+not yet implemented: the energy cell tier ladder
+
+test result: FAILED. 28 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+After the implementation: **32 passed, 0 failed**
+(`slice4-test-green.log`; the same 32 in `sdk-test.log`). The fourth new test,
+`every_cell_tier_declares_its_own_buffer_and_nothing_else_does`, was added with the
+wiring after that run (it pins `battery_of` to the same table); the wiring's red
+proof is the in-game one below.
+
+The in-game red is the same scenario against the **0.2.3** package
+(`ports/_shared/evidence/powah/powah-0.2.3.hmod`, run on a launcher build of that
+package's own tree, `evidence/powah-e2e/e2e-slice4-oldpackage.log`):
+
+```text
+== slice 4: every energy cell tier holds its own capacity ==
+FAIL: expected powah:energy_cell_basic at -4,100,12, got 'minecraft:air'
+```
+(`Unknown block type 'powah:energy_cell_basic'` in the game log; `EXIT:1`.)
+
+### Ladder (0.2.4, pin `0a875da`)
+
+Every compile step ran in `ports/powah`, `CARGO_INCREMENTAL=0`, inside a
+`ports/tools/build-slot.sh run --job W1-powah --port ports/powah --step …` lease with
+`BUILD_LOCAL=1`; logs in `ports/_shared/evidence/powah/`.
+
+| Step | Command | Result |
+|---|---|---|
+| unit tests | `cargo test --offline` | **32 passed**, 0 failed (`sdk-test.log`) |
+| lints | `cargo clippy --all-targets --offline -- -D warnings` | exit 0, 0 warnings (`sdk-clippy.log`) |
+| formatting | `cargo fmt --check` | exit 0, empty (`sdk-fmt.log`) |
+| package, twice | `rm -f Cargo.lock; cargo horizon-mod build` ×2, `cmp` | **byte-identical, 119,200 B** (`sdk-build{,-second}.log`) |
+| registry check | `cargo horizon-mod check powah.hmod` | **exit 0**, `powah 0.2.4 (native-mod, format native-1/0a875da…/e59da90…, for 26.3)`, `119200 bytes, SHA-256 663465ee8b93e5f8be371537f6515bd7252651e462a57f477faedd82ffcd3e34, unsigned` (`sdk-check.log`) |
+| fits the pin | `cargo horizon-mod fits powah.hmod --build 0a875da` | `0a875da  made for`, exit 0 (`sdk-fits.log`) |
+| fits **another** build | `cargo horizon-mod fits powah.hmod --build 0b14f8a` | `0b14f8a  fits`, exit 0 (`sdk-fits-nightly.log`) |
+| package gate | `python3 ports/tools/verify-sdk-package.py powah` | **1/1**, runtime byte-identical (`e49a2edda151`), no packed `Cargo.lock`, **134 entries** |
+| carried-data dialect | `python3 ports/tools/check_261_dialect.py powah.hmod` | exit 0: 33 recipe/loot files, every one in the 26.3 dialect, every `requires_tool` block in a mineable tag |
+
+In-game legs (launcher build `native-0a875da-f6fbf1a8142b`, instance `powah-e2e`,
+`Compiling powah (1 of 1)` in `evidence/powah-e2e/launcher-build-0.2.4.log`; logs in
+`ports/_shared/evidence/powah-e2e/`):
+
+| Leg | Command | Result |
+|---|---|---|
+| main | `launcher-game.sh build powah` + `build-slot.sh run --step e2e -- bash tools/e2e.sh` | **PASS** + `EXIT:0` (`e2e-launcher.log`) |
+| control (inside the main run; same Nightly, no package) | `CONTROL_GAME` | `setblock` → `Unknown block type 'powah:energy_cell_nitro'`, `give` → `Unknown item 'powah:energy_cell_starter'`, block stays air |
+| control (whole scenario, no package) | `GAME=$CONTROL_GAME …` | `FAIL: expected powah:furnator_starter at 0,100,0, got 'minecraft:air'` + `EXIT:1` (`e2e-control.log`) |
+| selftest (slice 1's flip) | `SELFTEST=1 …` | `FAIL: SELFTEST flipped: the unfuelled furnator made no FE, as it should` + `EXIT:1` (`e2e-selftest.log`) |
+| selftest (this slice's flip) | `SELFTEST=cells …` | `FAIL: expected powah:energy_cell_basic to hold 1000000/1000000 FE, got 'Energy Cell at -4,100,12: 4000000/4000000 FE (comparator 15, 4000 FE/t a side, t=766)'` + `EXIT:1` (`e2e-selftest-cells.log`) |
+| the previous package | 0.2.3 + this scenario | `EXIT:1` at the first new tier (`e2e-slice4-oldpackage.log`) |
+| log gate | `python3 ports/tools/check-e2e-logs.py powah-e2e --strict` | see below |
+
+Quoted from `e2e-launcher.log` (one command per tier; every tier clamps at its own
+capacity and names its own transfer):
+
+```text
+== slice 4: every energy cell tier holds its own capacity ==
+  block(-4,100,12) = powah:energy_cell_basic
+  set(-4,100,12) = Energy Cell at -4,100,12: 4000000/4000000 FE (comparator 15, 4000 FE/t a side, t=714)
+  block(-2,100,12) = powah:energy_cell_hardened
+  set(-2,100,12) = Energy Cell at -2,100,12: 10000000/10000000 FE (comparator 15, 10000 FE/t a side, t=728)
+  block(0,100,12) = powah:energy_cell_blazing
+  set(0,100,12) = Energy Cell at 0,100,12: 40000000/40000000 FE (comparator 15, 40000 FE/t a side, t=744)
+  block(2,100,12) = powah:energy_cell_niotic
+  set(2,100,12) = Energy Cell at 2,100,12: 100000000/100000000 FE (comparator 15, 100000 FE/t a side, t=762)
+  block(4,100,12) = powah:energy_cell_spirited
+  set(4,100,12) = Energy Cell at 4,100,12: 400000000/400000000 FE (comparator 15, 400000 FE/t a side, t=778)
+  block(6,100,12) = powah:energy_cell_nitro
+  set(6,100,12) = Energy Cell at 6,100,12: 2000000000/2000000000 FE (comparator 15, 2000000 FE/t a side, t=794)
+  block(-6,100,12) = powah:energy_cell_starter
+  set(-6,100,12) = Energy Cell at -6,100,12: 1000000/1000000 FE (comparator 15, 1000 FE/t a side, t=810)
+== slice 4: two adjacent cells swap and create nothing ==
+  pair source: Energy Cell at 16,100,16: 4000000/4000000 FE (comparator 15, 4000 FE/t a side, t=892)
+  pair sink:   Energy Cell at 16,100,17: 0/1000000 FE (comparator 0, 1000 FE/t a side, t=899)
+  {"scenario":"loot","block":"minecraft:air","drops":{"powah:energy_cell_basic":1}}
+  {"scenario":"loot","block":"minecraft:air","drops":{"powah:energy_cell_nitro":1}}
+```
+
+### What the in-game leg can and cannot assert about the transfer
+
+The **capacity** is asserted behaviourally and exactly: `2000000000` is above every
+tier's capacity, so the clamp is the tier's number, and it differs per tier.
+
+The **transfer** is asserted as the declaration the readout reads back, and pinned by
+`every_cell_tier_declares_its_own_buffer_and_nothing_else_does` (the same `cell_tier`
+row feeds `Registrar::block_energy`). A *net* flow between two cells is not
+observable at this pin, and this is upstream's behaviour rather than a port gap: a
+cell gives `min(transfer, stored)` and the neighbour accepts only
+`min(the neighbour's own insert cap, room)`, and both push every tick, so any adjacent
+pair swaps and nets zero — measured both ways (basic source → starter sink and
+starter → starter), and the pair phase asserts exactly that (the sink never climbs
+past its own 1,000 insert cap beside a 4,000/t source, and the source never loses more
+than the same cap, so the pair swaps rather than creating FE).
+
+### Coverage (parity rule, the family this slice adds)
+
+| Family (from the jar) | Status |
+|---|---|
+| `energy_cell_basic` block + item | **tested** — placed, `/powah set 2000000000` clamps at 4,000,000, readout names 4,000/t; mined in survival, drops itself |
+| `energy_cell_hardened` | **tested** — same legs; clamps 10,000,000, 10,000/t |
+| `energy_cell_blazing` | **tested** — clamps 40,000,000, 40,000/t |
+| `energy_cell_niotic` | **tested** — clamps 100,000,000, 100,000/t |
+| `energy_cell_spirited` | **tested** — clamps 400,000,000, 400,000/t |
+| `energy_cell_nitro` | **tested** — clamps 2,000,000,000, 2,000,000/t (the largest value the integer command accepts) |
+| `energy_cell_starter` (contrast) | **tested** — the same command clamps at 1,000,000, 1,000/t; slice 1's legs unchanged |
+| `energy_cell_basic` recipe | **tested** — crafted in a real table (`craft_check.py`): id + count, every ingredient consumed |
+| `energy_cell_{hardened,blazing,niotic,spirited,nitro}` recipes | **blocked(energizing-orb)** — they need `powah:steel_energized` / `powah:crystal_{blazing,niotic,spirited,nitro}`, all made by the unported Energizing Orb; the files are not carried |
+| the six cells' loot tables | **tested** — mined in survival, each drops itself (6 rows in the loot leg) |
+| creative tab (15 items now) | **not asserted in game** — no `ctl` command reads a creative tab; `cargo horizon-mod check` validates the tab, and the leg proves each id is giveable/placeable |
+| `energy_cell_creative` | **not ported** — a source, not a storage tier (gap 11) |
+| the other tiers/machines (furnator, cable, generators, reactors, Energizing, batteries, GUIs, side config, redstone modes, item charging, worldgen) | **not ported** — slice 1's recorded gaps 1–9, 11; `## Next slice` names the Energizing Orb as the one that unblocks the five recipes above |
+
+### Deviations slice 4 adds
+
+1. **Five of the six cell recipes are not carried** (see above): the blocks exist and
+   are provable, but in survival only `energy_cell_basic` can be reached until the
+   Energizing Orb ships. Recorded as `blocked(energizing-orb)`, not hidden.
+2. **The readout gained the tier's transfer** (`… FE/t a side`) so the in-game leg can
+   read the declaration back. The starter's line keeps its prefix.
+3. **The side config, redstone modes, comparator hook, GUI and item charging** remain
+   slice 1's gaps for every tier, the starter included.
+
+**Upstream defects fixed:** none — the tier numbers are upstream's
+(`DefaultEnergies`), and the swap between adjacent cells is upstream's own
+`Transfer.ALL` behaviour, documented (slice 1 deviation 3), not a defect. The only
+defect found while measuring was in **this port's harness**, not the mod: three
+assertions read a sink once before the relay had moved (slice 1's discharge phase,
+slice 3's network sink, and `set_energy`'s exact-equality poll against a cell that a
+cable drains every tick) — all three are now poll-based (`set_floor`, sink re-reads),
+and the two flaky runs that exposed them are kept in
+`evidence/powah-e2e/` history only through the logs they overwrote.
+
+### Pin findings this slice measured (for the next port)
+
+1. **A cell pair always nets zero.** A cell gives `min(transfer, stored)` and accepts
+   only `min(its own insert cap, room)`, and both push; a higher-tier source's extra
+   transfer is truncated by the lower-tier sink's insert cap and returned the same
+   tick. Any assertion of a tier's transfer must therefore be a declaration test (the
+   readout and a unit test on `battery_of`), never a net flow between two cells.
+2. **`/powah set` on a source that feeds something cannot be polled for equality** —
+   the drain starts the same tick (measured 99,500 by the next chat round trip). A
+   `set_floor` (≥ a floor) poll is the right shape; the conservation assertion carries
+   the exact total.
+3. **A sink read can precede the move the source poll waited for** by one round trip
+   (measured: sink 0 at t=552, source 500 at t=557). Poll the sink too.
+4. `/powah info`'s cell line now carries the declared transfer, so a harness can
+   assert a tier's declaration without a second command.
+
+Version: **0.2.3 → 0.2.4** (one patch). The published `[[versions]]` record keeps
+0.2.3 and gains 0.2.4 at publish time — this port does not touch the registry entry.
+
+Skills: superpowers/using-superpowers, brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion; BeautifulRust/rust-best-practices
+
+### Coverage table in the checker's shape (`check-coverage.py`)
+
+| Family | Status | Evidence |
+|---|---|---|
+| `block` | tested | every block placed and read back, from the three slice-1 machines to the seven cell tiers and their loot |
+| `item` | tested | every item given and counted; the machines' items placed |
+| `block_entity` | tested | the furnator burns and its buffer fills; a cell holds its tier's capacity; the cable relays across a run (energy only moves through the block entities' ticks) |
+| `loot_table` | tested | every machine and cell block mined in survival in the loot leg and asserted to drop itself |
+| `recipe:minecraft:crafting_shaped` | tested | `craft_check.py` crafts each shaped recipe in a real table: output id + count, ingredients consumed |
+| `recipe:minecraft:crafting_shapeless` | tested | same leg; the paste's lava bucket leaves its bucket |
+| `tag:block` | tested | the cable's `powah:energy_cable_connects` is the visual-arms tag (the relay is the mechanic and the three-cable run is asserted); the pickaxe/needs-iron tags are what makes the loot leg's drops real |

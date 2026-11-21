@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Craft Powah's slice-2 recipes in a real crafting table, and the three machine recipes.
+"""Craft Powah's slice-2 recipes in a real crafting table, and the machine recipes.
 
 Called by `tools/e2e.sh` with the open game's control socket and a crafting
 table's position. The harness numbers a crafting table's grid 100-108
@@ -15,8 +15,9 @@ names, in survival so the grid is really consumed, and asserts:
 4. an off-pattern grid (a stick where the casing belongs) leaves the result
    empty.
 
-The eleven cases are the eight material recipes the slice adds and the three
-machine recipes slice 1 carried but could not craft. A wrong id or count exits
+The twelve cases are the eight material recipes slice 2 adds, the three machine
+recipes slice 1 carried but could not craft, and slice 4's basic energy cell
+(the only cell tier whose recipe is craftable before the Energizing Orb). A wrong id or count exits
 1 with the observed slot; `SELFTEST=1` expects the first output one item too
 high, so the run MUST fail — that is what proves the assertions can fail.
 """
@@ -48,6 +49,10 @@ ROD_H = {"powah:dielectric_paste": [100, 101, 102, 106, 107, 108],
 CAPACITOR = {"minecraft:iron_ingot": [101, 103, 105, 107],
              "powah:dielectric_paste": [102, 106],
              "minecraft:redstone_block": [104]}
+# `ici/cdc/ici`: 4 iron, 4 basic capacitors, one casing (slice 4's basic cell).
+CELL_BASIC = {"minecraft:iron_ingot": [100, 102, 106, 108],
+              "powah:capacitor_basic": [101, 103, 105, 107],
+              "powah:dielectric_casing": [104]}
 
 
 def shaped(label, pattern, out, out_count):
@@ -103,6 +108,9 @@ CASES = [
            "powah:energy_cell_starter", 1),
     shaped("6 horizontal rods + 2 nuggets + tiny capacitor -> 12 cables", CABLE,
            "powah:energy_cable_starter", 12),
+    # --- slice 4: the basic cell, the one tier whose recipe this slice carries --
+    shaped("4 iron + 4 basic capacitors + casing -> a basic energy cell",
+           CELL_BASIC, "powah:energy_cell_basic", 1),
 ]
 
 
@@ -257,9 +265,9 @@ def main():
 
     if failures:
         raise SystemExit(1)
-    print("recipe PASS: the eight material recipes and the three machine recipes craft "
-          "their declared output id and count, every ingredient is consumed, the lava "
-          "bucket leaves its bucket, and the off-pattern grid leaves the result empty")
+    print("recipe PASS: the eight material recipes, the three machine recipes and the basic "
+          "energy cell craft their declared output id and count, every ingredient is consumed, "
+          "the lava bucket leaves its bucket, and the off-pattern grid leaves the result empty")
 
 
 if __name__ == "__main__":

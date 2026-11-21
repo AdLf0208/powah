@@ -1,0 +1,14 @@
+{
+  "template": "minecraft:iron_block",
+  "properties": {
+    "hardness": 2.0,
+    "explosion_resistance": 20.0,
+    "sounds": "minecraft:iron_block",
+    "requires_tool": true,
+    "occludes": false
+  },
+  "item": true,
+  "components": {
+    "minecraft:max_stack_size": 1
+  }
+}

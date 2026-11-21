@@ -1,11 +1,11 @@
-# Slice 1 of the Powah port, as one flat SDK package: the carried blocks, items, models,
+# Slices 1-4 of the Powah port, as one flat SDK package: the carried blocks, items, models,
 # textures, recipes, loot, tags and lang are the `assets/` and `data/` beside `src/`, and the
 # behaviour is the one `impl Hooks` there. Licence: LGPL-3.0-only (Technici4n/Powah); the full
 # text and its provenance are in LICENSE and LICENSE-NOTICE.md inside this package. Local-only
 # until the maintainer approves publishing (ARCHITECTURE.md §8).
 id = "powah"
 name = "Powah"
-version = "0.2.3"
+version = "0.2.4"
 description = """A port of Powah! (Rearchitected) for Horizon, slice 1: the starter tier of the energy
 chain. The Furnator burns a furnace fuel into carbon and makes 20 FE/t into a 20,000 FE buffer
 (one coal is 48,000 FE); the Energy Cell is a 1,000,000 FE capacitor that takes and gives 1,000
@@ -16,9 +16,13 @@ Slice 2 carries the dielectric/capacitor crafting family — dielectric paste, r
 basic capacitor (six items, eight recipes) — so the three machine recipes craft.
 Slice 3 makes a run of cables one network: every cable connected through cables forwards the same
 charge (up to 500 FE/t for the network), so a cell three cables away from another is charged.
-Not yet ported: the other
-six tiers, the creative cell, the remaining machines, Energizing, item charging, side config,
-redstone modes and the GUIs."""
+Slice 4 completes the energy cell ladder: the basic, hardened, blazing, niotic, spirited and nitro
+cells carry their own capacity (4M/10M/40M/100M/400M/2G FE) and per-side transfer (4,000 up to
+2,000,000 FE/t); `/powah set` clamps a cell at its tier's capacity.
+Not yet ported: the other six
+furnator and cable tiers, the creative cell, the generators, reactors and the Energizing Orb, item
+charging, side config, redstone modes and the GUIs. The five higher cell recipes need the
+Energizing Orb's steel/crystals, so only the basic cell's recipe is carried."""
 authors = ["owmii", "Technici4n", "AdLf0208"]
 # A native mod: Rust in src/, compiled by the launcher against the game build [native] pins,
 # beside the carried assets/ and data/. The id is the resource namespace and the only identity.
@@ -27,7 +31,7 @@ api = "0.2"
 # or single-player world runs it inside the client installation.
 side = "both"
 # The one shared value every manifest carries ("May add blocks, items, mob effects and entity
-# types"); this package's content declares three blocks, their items and three block entity types.
+# types"); this package's content declares nine blocks, their items and nine block entity types.
 capabilities = ["registries"]
 
 [native]

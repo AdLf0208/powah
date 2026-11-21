@@ -22,8 +22,8 @@ use mod_api::{
 };
 
 use crate::runtime::{
-    CABLE_TRANSFER, CELL_CAPACITY, CELL_TRANSFER, FURNATOR_CAPACITY, FURNATOR_TRANSFER, Furnator,
-    Neighbour, clamp_energy, comparator_strength, network_moves, push_amount,
+    CABLE_TRANSFER, CELL_TIER_COUNT, CellTier, FURNATOR_CAPACITY, FURNATOR_TRANSFER, Furnator,
+    Neighbour, cell_tier, clamp_energy, comparator_strength, network_moves, push_amount,
 };
 
 /// The furnator block and its item.
@@ -38,6 +38,19 @@ pub(crate) const FURNATOR_TYPE: &str = "furnator_starter";
 pub(crate) const CELL_TYPE: &str = "energy_cell_starter";
 pub(crate) const CABLE_TYPE: &str = "energy_cable_starter";
 
+/// Every energy cell tier's block id and block entity type name, in the ladder's
+/// order (the index [`cell_tier`] takes). A type name is its block id without this
+/// mod's namespace, which is what [`declare`] attaches.
+pub(crate) const CELLS: [(&str, &str); CELL_TIER_COUNT] = [
+    (CELL, CELL_TYPE),
+    ("powah:energy_cell_basic", "energy_cell_basic"),
+    ("powah:energy_cell_hardened", "energy_cell_hardened"),
+    ("powah:energy_cell_blazing", "energy_cell_blazing"),
+    ("powah:energy_cell_niotic", "energy_cell_niotic"),
+    ("powah:energy_cell_spirited", "energy_cell_spirited"),
+    ("powah:energy_cell_nitro", "energy_cell_nitro"),
+];
+
 /// The furnator's fuel slot: upstream's slot 1 of 2 (the charging slot is a gap),
 /// so slice 1 keeps exactly one.
 const FUEL_SLOT: usize = 0;
@@ -51,7 +64,8 @@ const KEY_CARBON: &str = "carbon";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
     Furnator,
-    Cell,
+    /// An energy cell, carrying its tier's capacity and transfer.
+    Cell(CellTier),
     Cable,
 }
 
@@ -60,11 +74,17 @@ impl Kind {
     pub(crate) fn of(block: &str) -> Option<Kind> {
         match block {
             FURNATOR => Some(Kind::Furnator),
-            CELL => Some(Kind::Cell),
             CABLE => Some(Kind::Cable),
-            _ => None,
+            _ => cell_of(block).map(Kind::Cell),
         }
     }
+}
+
+/// The energy cell a block id names, with its tier's numbers; `None` for any other
+/// block. The ids are the content's own (`data/powah/horizon/block/energy_cell_*`).
+pub(crate) fn cell_of(block: &str) -> Option<CellTier> {
+    let index = CELLS.iter().position(|(id, _)| *id == block)?;
+    cell_tier(index)
 }
 
 /// What `/powah set` did, so the command can answer honestly.
@@ -108,12 +128,13 @@ pub(crate) fn furnator_battery() -> ModEnergyBuffer {
     }
 }
 
-/// The cell's buffer (`AbstractEnergyStorage`): 1,000,000 FE, 1,000 a side both ways.
-pub(crate) fn cell_battery() -> ModEnergyBuffer {
+/// The cell's buffer (`AbstractEnergyStorage`): the tier's capacity, its transfer a
+/// side both ways.
+pub(crate) fn cell_battery(tier: CellTier) -> ModEnergyBuffer {
     ModEnergyBuffer {
-        capacity: CELL_CAPACITY,
-        max_insert: CELL_TRANSFER,
-        max_extract: CELL_TRANSFER,
+        capacity: tier.capacity,
+        max_insert: tier.transfer,
+        max_extract: tier.transfer,
         insert_faces: [true; 6],
         extract_faces: [true; 6],
     }
@@ -124,7 +145,7 @@ pub(crate) fn cell_battery() -> ModEnergyBuffer {
 pub(crate) fn battery_of(block: &str) -> Option<ModEnergyBuffer> {
     match Kind::of(block) {
         Some(Kind::Furnator) => Some(furnator_battery()),
-        Some(Kind::Cell) => Some(cell_battery()),
+        Some(Kind::Cell(tier)) => Some(cell_battery(tier)),
         _ => None,
     }
 }
@@ -179,9 +200,11 @@ pub(crate) fn status_line(
                 carbon > 0,
             )
         }
-        Kind::Cell => format!(
-            "Energy Cell at {x},{y},{z}: {energy}/{CELL_CAPACITY} FE (comparator {}, t={time})",
-            comparator_strength(energy, CELL_CAPACITY),
+        Kind::Cell(tier) => format!(
+            "Energy Cell at {x},{y},{z}: {energy}/{} FE (comparator {}, {} FE/t a side, t={time})",
+            tier.capacity,
+            comparator_strength(energy, tier.capacity),
+            tier.transfer,
         ),
         Kind::Cable => format!(
             "Energy Cable at {x},{y},{z}: no storage, moves up to {CABLE_TRANSFER} FE/t (t={time})"
@@ -252,11 +275,11 @@ pub(crate) fn info_line(host: &mut dyn ServerHost, pos: [i32; 3]) -> Option<Stri
                 .map(|stack| (stack.item().id(&*host), stack.count()));
             (state.energy, state.carbon, fuel)
         }
-        Kind::Cell => {
+        Kind::Cell(tier) => {
             let entity = host.block_entity(level, pos)?;
             let saved = Tag::Compound(entity.data(&*host)?);
             (
-                clamp_energy(int(&saved, KEY_ENERGY), CELL_CAPACITY),
+                clamp_energy(int(&saved, KEY_ENERGY), tier.capacity),
                 0,
                 None,
             )
@@ -279,7 +302,7 @@ pub(crate) fn set_energy(host: &mut dyn ServerHost, pos: [i32; 3], amount: i32) 
     };
     let capacity = match Kind::of(&block) {
         Some(Kind::Furnator) => FURNATOR_CAPACITY,
-        Some(Kind::Cell) => CELL_CAPACITY,
+        Some(Kind::Cell(tier)) => tier.capacity,
         Some(Kind::Cable) => return SetOutcome::Cable,
         None => return SetOutcome::NoBlock,
     };
@@ -464,7 +487,7 @@ pub(crate) fn on_level_tick_post(
         };
         match kind {
             Kind::Furnator => push_out(host, level, pos, FURNATOR_TRANSFER),
-            Kind::Cell => push_out(host, level, pos, CELL_TRANSFER),
+            Kind::Cell(tier) => push_out(host, level, pos, tier.transfer),
             Kind::Cable => {
                 if planned.contains(&pos) {
                     continue;
@@ -682,6 +705,7 @@ pub(crate) fn integer(argument: Option<&CommandArgumentValue>) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::{CELL_CAPACITY, CELL_TRANSFER};
 
     /// The review finding (2026-11-18): both usages act on any loaded machine at
     /// player-chosen coordinates, so a level-0 registration lets a non-operator
@@ -707,9 +731,44 @@ mod tests {
     }
 
     #[test]
+    fn every_energy_cell_tier_is_one_of_the_ladder() {
+        let ids = [
+            ("powah:energy_cell_starter", 1_000_000, 1_000),
+            ("powah:energy_cell_basic", 4_000_000, 4_000),
+            ("powah:energy_cell_hardened", 10_000_000, 10_000),
+            ("powah:energy_cell_blazing", 40_000_000, 40_000),
+            ("powah:energy_cell_niotic", 100_000_000, 100_000),
+            ("powah:energy_cell_spirited", 400_000_000, 400_000),
+            ("powah:energy_cell_nitro", 2_000_000_000, 2_000_000),
+        ];
+        for (index, (id, capacity, transfer)) in ids.into_iter().enumerate() {
+            let cell = cell_of(id).unwrap_or_else(|| panic!("{id} is an energy cell"));
+            assert_eq!(
+                (cell.capacity, cell.transfer),
+                (capacity, transfer),
+                "{id} is the ladder's tier {index}"
+            );
+            assert_eq!(
+                cell,
+                cell_tier(index).expect("the same tier in the rule's table")
+            );
+        }
+        assert_eq!(
+            cell_of("powah:energy_cell_creative"),
+            None,
+            "the creative cell is not carried"
+        );
+        assert_eq!(cell_of(FURNATOR), None, "a furnator is not a cell");
+        assert_eq!(cell_of("minecraft:chest"), None);
+    }
+
+    #[test]
     fn a_block_id_maps_to_its_machine_and_nothing_else_does() {
         assert_eq!(Kind::of(FURNATOR), Some(Kind::Furnator));
-        assert_eq!(Kind::of(CELL), Some(Kind::Cell));
+        assert_eq!(
+            Kind::of(CELL),
+            Some(Kind::Cell(cell_tier(0).expect("the starter tier")))
+        );
         assert_eq!(Kind::of(CABLE), Some(Kind::Cable));
         assert_eq!(Kind::of("minecraft:chest"), None);
         assert_eq!(Kind::of("powah:furnator_basic"), None, "a later tier");
@@ -741,13 +800,27 @@ mod tests {
 
     #[test]
     fn the_cell_declares_a_buffer_both_ways() {
-        let buffer = cell_battery();
+        let starter = cell_tier(0).expect("the starter tier");
+        let buffer = cell_battery(starter);
         assert_eq!(buffer.capacity, CELL_CAPACITY);
         assert_eq!(buffer.max_insert, CELL_TRANSFER);
         assert_eq!(buffer.max_extract, CELL_TRANSFER);
         assert_eq!(buffer.insert_faces, [true; 6]);
         assert_eq!(buffer.extract_faces, [true; 6]);
         assert_eq!(battery_of(CELL), Some(buffer));
+    }
+
+    #[test]
+    fn every_cell_tier_declares_its_own_buffer_and_nothing_else_does() {
+        for (index, (block, _)) in CELLS.iter().enumerate() {
+            let tier = cell_tier(index).expect("a tier on the ladder");
+            assert_eq!(
+                battery_of(block),
+                Some(cell_battery(tier)),
+                "{block} declares tier {index}'s numbers"
+            );
+        }
+        assert_eq!(battery_of("powah:energy_cell_creative"), None);
     }
 
     #[test]
@@ -797,13 +870,20 @@ mod tests {
             "Furnator at 0,100,0: 320/20000 FE (comparator 0, carbon 46800, burning true, fuel \
              minecraft:coal x4, t=282)"
         );
+        let starter = Kind::Cell(cell_tier(0).expect("the starter tier"));
         assert_eq!(
-            status_line(Kind::Cell, [2, 100, 0], 1_360, 0, None, 290),
-            "Energy Cell at 2,100,0: 1360/1000000 FE (comparator 0, t=290)"
+            status_line(starter, [2, 100, 0], 1_360, 0, None, 290),
+            "Energy Cell at 2,100,0: 1360/1000000 FE (comparator 0, 1000 FE/t a side, t=290)"
         );
         assert_eq!(
-            status_line(Kind::Cell, [2, 100, 0], 1_000_000, 0, None, 380),
-            "Energy Cell at 2,100,0: 1000000/1000000 FE (comparator 15, t=380)"
+            status_line(starter, [2, 100, 0], 1_000_000, 0, None, 380),
+            "Energy Cell at 2,100,0: 1000000/1000000 FE (comparator 15, 1000 FE/t a side, t=380)"
+        );
+        let nitro = Kind::Cell(cell_tier(6).expect("the nitro tier"));
+        assert_eq!(
+            status_line(nitro, [2, 100, 0], 2_000_000_000, 0, None, 380),
+            "Energy Cell at 2,100,0: 2000000000/2000000000 FE (comparator 15, 2000000 FE/t a \
+             side, t=380)"
         );
         assert_eq!(
             status_line(Kind::Cable, [1, 100, 0], 0, 0, None, 188),

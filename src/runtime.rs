@@ -23,6 +23,36 @@ pub const CELL_TRANSFER: i32 = 1_000;
 /// Energy Cable STARTER transfer (`cableTransfer`); the cable stores nothing.
 pub const CABLE_TRANSFER: i32 = 500;
 
+/// The tiers a non-creative Powah block has (`Tier.getNormalVariants`), in order:
+/// starter, basic, hardened, blazing, niotic, spirited, nitro.
+pub const CELL_TIER_COUNT: usize = 7;
+
+/// One energy cell tier's storage numbers: `batteryCapacity` and
+/// `batteryTransfer` at that tier (`config/v2/DefaultEnergies`, both derived from
+/// `baseScaling` — `× 1_000_000` and `× 1_000`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CellTier {
+    pub capacity: i32,
+    pub transfer: i32,
+}
+
+/// The energy cell tier at `index` (0 = starter … 6 = nitro), `None` past the
+/// ladder — the creative cell is a source, not a storage tier, and is not carried.
+#[must_use]
+pub fn cell_tier(index: usize) -> Option<CellTier> {
+    /// `DefaultEnergies.baseScaling`, in `Tier.getNormalVariants` order.
+    const BASE_SCALING: [i32; CELL_TIER_COUNT] = [1, 4, 10, 40, 100, 400, 2_000];
+    /// `batteryCapacity` = `reactorProduction * 4000` = `baseScaling * 250 * 4000`.
+    const CAPACITY_PER_SCALING: i32 = 1_000_000;
+    /// `batteryTransfer` = `cableTransfer * 2` = `baseScaling * 250 * 4`.
+    const TRANSFER_PER_SCALING: i32 = 1_000;
+    let scaling = *BASE_SCALING.get(index)?;
+    Some(CellTier {
+        capacity: scaling * CAPACITY_PER_SCALING,
+        transfer: scaling * TRANSFER_PER_SCALING,
+    })
+}
+
 /// Energy clamped into a buffer.
 #[must_use]
 pub fn clamp_energy(energy: i32, capacity: i32) -> i32 {
@@ -246,6 +276,44 @@ mod tests {
 
     fn empty() -> [Option<Neighbour>; 6] {
         [None; 6]
+    }
+
+    #[test]
+    fn every_energy_cell_tier_scales_upstreams_battery_numbers() {
+        // `DefaultEnergies`: baseScaling = 1, 4, 10, 40, 100, 400, 2000;
+        // batteryCapacity = reactorProduction * 4000 = baseScaling * 1_000_000 and
+        // batteryTransfer = cableTransfer * 2 = reactorProduction * 4 = baseScaling * 1_000.
+        let expected = [
+            (1_000_000, 1_000),
+            (4_000_000, 4_000),
+            (10_000_000, 10_000),
+            (40_000_000, 40_000),
+            (100_000_000, 100_000),
+            (400_000_000, 400_000),
+            (2_000_000_000, 2_000_000),
+        ];
+        for (index, (capacity, transfer)) in expected.into_iter().enumerate() {
+            let tier = cell_tier(index).unwrap_or_else(|| panic!("tier {index} is on the ladder"));
+            assert_eq!(
+                (tier.capacity, tier.transfer),
+                (capacity, transfer),
+                "tier {index}'s numbers"
+            );
+        }
+        assert_eq!(
+            cell_tier(CELL_TIER_COUNT),
+            None,
+            "the creative tier is not a storage tier"
+        );
+    }
+
+    #[test]
+    fn the_starter_cell_keeps_slice_1_s_numbers() {
+        let starter = cell_tier(0).expect("the starter tier is the first of the ladder");
+        assert_eq!(
+            (starter.capacity, starter.transfer),
+            (CELL_CAPACITY, CELL_TRANSFER)
+        );
     }
 
     #[test]

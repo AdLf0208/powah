@@ -2,6 +2,12 @@
   "values": [
     "powah:furnator_starter",
     "powah:energy_cell_starter",
-    "powah:energy_cable_starter"
+    "powah:energy_cable_starter",
+    "powah:energy_cell_basic",
+    "powah:energy_cell_hardened",
+    "powah:energy_cell_blazing",
+    "powah:energy_cell_niotic",
+    "powah:energy_cell_spirited",
+    "powah:energy_cell_nitro"
   ]
 }

@@ -10,6 +10,12 @@
     "powah:dielectric_rod_horizontal",
     "powah:dielectric_casing",
     "powah:capacitor_basic",
-    "powah:capacitor_basic_tiny"
+    "powah:capacitor_basic_tiny",
+    "powah:energy_cell_basic",
+    "powah:energy_cell_hardened",
+    "powah:energy_cell_blazing",
+    "powah:energy_cell_niotic",
+    "powah:energy_cell_spirited",
+    "powah:energy_cell_nitro"
   ]
 }

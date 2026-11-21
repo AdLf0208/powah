@@ -40,6 +40,21 @@ use mod_api::{
 
 use crate::powah::{Queue, SetOutcome};
 
+/// Declare one idle block entity type (a cell or the cable) and attach the Part
+/// that only queues its position for the level tick's move phase.
+fn declare_idle(
+    registrar: &mut dyn Registrar,
+    context: &RegistrationContext,
+    queue: &Arc<Mutex<Queue>>,
+    name: &str,
+) {
+    let kind = powah::declare(registrar, name);
+    let part = powah::IdlePart::new(Arc::clone(queue));
+    if let Err(error) = registrar.block_entity_part(&kind, part) {
+        context.refuse(&error.to_string());
+    }
+}
+
 /// The mod's session state: the machines whose block entity ticked this tick,
 /// per level, drained at the end of that level's tick.
 #[derive(Default)]
@@ -49,33 +64,36 @@ struct Mod {
 
 #[mod_api::horizon_mod]
 impl Hooks for Mod {
-    /// Declare the three machines: a block entity type each, the furnator's one
-    /// fuel slot, its and the cell's FE buffers, and the Parts that make them tick.
+    /// Declare the machines: a block entity type each, the furnator's one fuel slot,
+    /// its and every cell tier's FE buffer, and the Parts that make them tick.
     ///
-    /// The cable declares no buffer — it stores nothing (upstream's capacity is 0)
-    /// — and still needs a type and a tick, because a cable is what queues its own
-    /// position for the level's move phase.
+    /// Nine blocks in all — the furnator, the seven energy cell tiers and the cable.
+    /// The cable declares no buffer (it stores nothing; upstream's capacity is 0) and
+    /// still needs a type and a tick, because a cable is what queues its own position
+    /// for the level's move phase.
     fn register(&self, registrar: &mut dyn Registrar, context: &RegistrationContext) {
         let furnator = registrar.block_key(powah::FURNATOR);
         registrar.block_container(&furnator, powah::container());
         registrar.block_energy(&furnator, powah::furnator_battery());
-        let cell = registrar.block_key(powah::CELL);
-        registrar.block_energy(&cell, powah::cell_battery());
+        // Every energy cell tier: one buffer with the tier's own capacity and
+        // per-side transfer (upstream's `AbstractEnergyStorage` over `EnergyConfig`).
+        for (index, (block, _)) in powah::CELLS.into_iter().enumerate() {
+            let tier = runtime::cell_tier(index).expect("every cell id is on the tier ladder");
+            let cell = registrar.block_key(block);
+            registrar.block_energy(&cell, powah::cell_battery(tier));
+        }
 
-        // One type per block, and two Part types: the furnator burns, the cell and the
+        // One type per block, and two Part types: the furnator burns, a cell and the
         // cable only queue their position for the move phase.
         let furnator_kind = powah::declare(registrar, powah::FURNATOR_TYPE);
         let part = powah::FurnatorPart::new(Arc::clone(&self.queue));
         if let Err(error) = registrar.block_entity_part(&furnator_kind, part) {
             context.refuse(&error.to_string());
         }
-        for name in [powah::CELL_TYPE, powah::CABLE_TYPE] {
-            let kind = powah::declare(registrar, name);
-            let part = powah::IdlePart::new(Arc::clone(&self.queue));
-            if let Err(error) = registrar.block_entity_part(&kind, part) {
-                context.refuse(&error.to_string());
-            }
+        for (_, name) in powah::CELLS {
+            declare_idle(registrar, context, &self.queue, name);
         }
+        declare_idle(registrar, context, &self.queue, powah::CABLE_TYPE);
     }
 
     /// After the level's tick: run the queued moves, where every block entity is

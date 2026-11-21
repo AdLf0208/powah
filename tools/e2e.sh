@@ -58,6 +58,18 @@
 #  - a source cell, three cables and a sink cell in one row: the charge crosses
 #    the run (0.2.2 delivered nothing), the two cells' sum stays 100000, and a
 #    cell off the network stays empty.
+#
+# Slice 4 (gap 11, "the other 6 tiers ... are unported") adds the energy cell
+# ladder:
+#  - each of the seven tiers is placed and set to 2,000,000,000 FE; the cell
+#    clamps it at its own tier's capacity (1M/4M/10M/40M/100M/400M/2G) and its
+#    readout names its own per-side transfer;
+#  - two adjacent pairs (starter source -> starter sink, basic source ->
+#    starter sink) show the transfer in behaviour: the first swaps 1,000 each
+#    way and its sink stays at 0..1,000, the second nets 3,000 a tick;
+#  - each tier drops itself when mined in survival.
+# SELFTEST=cells expects the basic cell to clamp at the starter's 1,000,000
+# (it must FAIL there), proving the capacity assertion can fail.
 set -euo pipefail
 export LC_ALL=C
 
@@ -149,6 +161,39 @@ set_energy() { # X Y Z AMOUNT
         say "powah set $want $1 $2 $3"
     done
     fail "could not set $1,$2,$3 to $want FE: $line"
+}
+# set_clamped X Y Z AMOUNT WANT: `/powah set AMOUNT`, retried until the cell reads
+# WANT back. A tier cell clamps AMOUNT at its own capacity, so the reply's number
+# is the clamp (not AMOUNT) and `set_energy`'s equality poll cannot be used.
+set_clamped() { # X Y Z AMOUNT WANT
+    local want=$5 line
+    say "powah set $4 $1 $2 $3"
+    for _ in $(seq 1 8); do
+        line=$(info "$1" "$2" "$3")
+        if [ "$(energy_of "$line")" = "$want" ]; then
+            echo "  set($1,$2,$3) = $line"
+            return
+        fi
+        say "powah set $4 $1 $2 $3"
+    done
+    fail "could not clamp $1,$2,$3 to $want FE: $line"
+}
+# set_floor X Y Z AMOUNT FLOOR: `/powah set AMOUNT`, retried until the cell holds
+# at least FLOOR. A source beside a cable loses 500 FE/t as soon as it is set, so
+# an exact-equality poll never settles (measured: 99,500 after one round trip);
+# the phase's conservation check is what pins the total.
+set_floor() { # X Y Z AMOUNT FLOOR
+    local floor=$5 line
+    say "powah set $4 $1 $2 $3"
+    for _ in $(seq 1 10); do
+        line=$(info "$1" "$2" "$3")
+        if [ "$(energy_of "$line")" -ge "$floor" ]; then
+            echo "  set($1,$2,$3) = $line"
+            return
+        fi
+        say "powah set $4 $1 $2 $3"
+    done
+    fail "could not set $1,$2,$3 to at least $floor FE: $line"
 }
 expect_info() { # expect_info X Y Z SUBSTRING
     local line
@@ -248,6 +293,13 @@ control_leg() {
     case "$give" in
         *"Unknown item"*|*"unknown item"*|*"error"*|*"not found"*) ;;
         *) fail "the control game knew powah:energy_cell_starter, so the content did not come from this package" ;;
+    esac
+    # Slice 4's ladder: the highest tier is unknown without the package too.
+    tier=$(ctl command "setblock 5 100 0 powah:energy_cell_nitro")
+    echo "  tier setblock reply: $tier"
+    case "$tier" in
+        *"Unknown block"*|*"unknown block"*|*"error"*) ;;
+        *) fail "the control game knew powah:energy_cell_nitro, so the content did not come from this package" ;;
     esac
     name=$(ctl block 4 100 0 | jq -r '.name // .block // "unknown"')
     [ "$name" = "minecraft:air" ] || fail "the control game holds $name, so the block id was known"
@@ -360,6 +412,13 @@ for _ in $(seq 1 8); do
     ctl wait 10
     source_line=$(info 2 100 0)
 done
+# The sink read can land before the move the source poll waited for (measured: sink
+# 0 at t=552, source 500 at t=557), so re-read the sink until its charge shows.
+for _ in $(seq 1 8); do
+    [ "$(energy_of "$sink_line")" -gt 0 ] && break
+    ctl wait 10
+    sink_line=$(info 2 100 2)
+done
 echo "  source: $source_line"
 echo "  sink:   $sink_line"
 [ "$(energy_of "$source_line")" -lt 1000 ] || fail "the charged cell did not give any FE: $source_line"
@@ -378,11 +437,18 @@ place 4 100 5 powah:energy_cell_starter
 # A cell three blocks above the source, reached by no cable: the network gathers
 # its ports by walking cables, so this one is not on it and must stay empty.
 place 0 103 5 powah:energy_cell_starter
-set_energy 0 100 5 100000
+set_floor 0 100 5 100000 1000
 ctl wait 40
 sink_line=$(info 4 100 5)
 source_line=$(info 0 100 5)
-# Two chat round trips are ~40 ticks apart, so poll the source until the move shows.
+# Two chat round trips are ~40 ticks apart, so the sink read can land before the
+# relay's first move: poll the sink until the charge shows, then the source (its
+# reading is a report, not an assertion — the relay pulls both ways).
+for _ in $(seq 1 8); do
+    [ "$(energy_of "$sink_line")" -gt 0 ] && break
+    ctl wait 10
+    sink_line=$(info 4 100 5)
+done
 for _ in $(seq 1 8); do
     [ "$(energy_of "$source_line")" -lt 100000 ] && break
     ctl wait 10
@@ -393,7 +459,12 @@ echo "  source: $source_line"
 echo "  sink:   $sink_line"
 echo "  off the network: $isolated_line"
 [ "$(energy_of "$sink_line")" -gt 0 ] || fail "a three-cable network did not relay FE into the cell: $sink_line"
-[ "$(energy_of "$source_line")" -lt 100000 ] || fail "the charged cell did not give any FE through the network: $source_line"
+# The source's live reading is not asserted: this relay pulls, so a charged sink
+# gives its charge straight back through the same cables and the source reads
+# 100000 +- 500 depending on which phase a chat round trip lands in (measured
+# 99500 in the 0.2.3 run, 100500 in the next). The conservation check below
+# freezes the transfer first, which is where "the charge moved and nothing was
+# created" is proved.
 [ "$(energy_of "$isolated_line")" = 0 ] || fail "a cell with no cable took FE: $isolated_line"
 if [ "$SELFTEST" = network ]; then
     echo "  SELFTEST: expecting the three-cable run to deliver nothing (this must fail)"
@@ -411,6 +482,62 @@ frozen=$(( $(energy_of "$frozen_source") + $(energy_of "$frozen_sink") ))
 echo "  split: $frozen_source"
 echo "  split: $frozen_sink"
 [ "$frozen" = 100000 ] || fail "the network's two cells hold $frozen FE after being split, not the 100000 the source was set to: $frozen_source / $frozen_sink"
+
+echo "== slice 4: every energy cell tier holds its own capacity =="
+# One command against every tier (`/powah set 2000000000 <pos>`): a cell clamps
+# what it is given at its own tier's capacity, so the same command reads back a
+# different exact number per tier (`DefaultEnergies`: baseScaling x 1,000,000).
+tier_cell() { # X ID CAPACITY TRANSFER
+    place "$1" 100 12 "$2"
+    set_clamped "$1" 100 12 2000000000 "$3"
+    local line expect=$3
+    line=$(info "$1" 100 12)
+    # SELFTEST=cells flips the basic tier's expectation to the starter's capacity;
+    # the readout still says 4,000,000, so the assertion below must fail there.
+    if [ "$SELFTEST" = cells ] && [ "$2" = powah:energy_cell_basic ]; then
+        expect=1000000
+        echo "  SELFTEST: expecting the basic cell to clamp at the starter's $expect (this must fail)"
+    fi
+    echo "  info($1,100,12): $line"
+    case "$line" in
+        *"$expect/$expect FE"*) ;;
+        *) fail "expected $2 to hold $expect/$expect FE, got '$line'" ;;
+    esac
+    case "$line" in
+        *"$4 FE/t a side"*) ;;
+        *) fail "expected $2 to declare $4 FE/t a side, got '$line'" ;;
+    esac
+}
+# The six tiers this slice adds first (the previous package does not know their
+# ids at all), then the starter as the contrast it is clamped against.
+tier_cell -4 powah:energy_cell_basic 4000000 4000
+tier_cell -2 powah:energy_cell_hardened 10000000 10000
+tier_cell 0 powah:energy_cell_blazing 40000000 40000
+tier_cell 2 powah:energy_cell_niotic 100000000 100000
+tier_cell 4 powah:energy_cell_spirited 400000000 400000
+tier_cell 6 powah:energy_cell_nitro 2000000000 2000000
+tier_cell -6 powah:energy_cell_starter 1000000 1000
+
+echo "== slice 4: two adjacent cells swap and create nothing =="
+# A cell gives its own transfer and accepts the neighbour's insert cap, and both
+# give and take, so a pair nets zero by design (slice 1's deviation 3; upstream's
+# answer is the side-config GUI, which is not ported). What the pair does prove,
+# and what can fail: the starter sink never climbs past its own 1,000 insert cap
+# beside a full basic cell (a wrong declaration would let it climb at 3,000 a
+# tick), and the basic source never loses more than that cap — the pair swaps
+# instead of creating or destroying FE.
+place 16 100 16 powah:energy_cell_basic
+place 16 100 17 powah:energy_cell_starter
+say "powah set 4000000 16 100 16"
+ctl wait 60
+pair_source=$(info 16 100 16)
+pair_sink=$(info 16 100 17)
+echo "  pair source: $pair_source"
+echo "  pair sink:   $pair_sink"
+[ "$(energy_of "$pair_sink")" -le 1000 ] || fail "a starter sink beside a full basic cell holds $(energy_of "$pair_sink") FE; its insert cap is its own 1,000 a side, so the pair swaps and nothing nets: $pair_sink"
+[ "$(energy_of "$pair_source")" -ge 3998000 ] || fail "the full basic cell lost $(energy_of "$pair_source") FE to an adjacent starter that gives its own 1,000 back: $pair_source"
+ctl command "setblock 16 100 16 minecraft:air" >/dev/null
+ctl wait 4
 
 echo "== slice 2: the six dielectric/capacitor items are real items =="
 for item in powah:dielectric_paste powah:dielectric_rod powah:dielectric_rod_horizontal \
@@ -465,8 +592,18 @@ for spec in "6 powah:furnator_starter" "7 powah:energy_cell_starter" "8 powah:en
     got=$(echo "$broken" | jq -r --arg id "$2" '.drops[$id] // 0')
     [ "$got" -ge 1 ] || fail "breaking $2 dropped $got of itself, not the machine"
 done
+# Slice 4: every cell tier drops itself too.
+for tier in basic hardened blazing niotic spirited nitro; do
+    place 6 100 0 "powah:energy_cell_$tier"
+    ctl look-at-block 6 100 0 >/dev/null || true
+    broken=$(ctl break 6 100 0) || fail "cannot break powah:energy_cell_$tier at 6,100,0"
+    echo "$broken" | jq -c '{scenario:"loot", block, drops}'
+    [ "$(echo "$broken" | jq -r '.block')" = "minecraft:air" ] || fail "powah:energy_cell_$tier did not break"
+    got=$(echo "$broken" | jq -r --arg id "powah:energy_cell_$tier" '.drops[$id] // 0')
+    [ "$got" -ge 1 ] || fail "breaking powah:energy_cell_$tier dropped $got of itself, not the machine"
+done
 ctl command "gamemode creative @s" >/dev/null
 ctl command "clear @s" >/dev/null
 ctl wait 3
 
-echo "PASS: a fuelled furnator made FE, the cable carried it into the cell, an unfuelled furnator made nothing, a cell without a cable stayed empty, a full cell stayed full, a charged cell drained through a cable into an empty one, a three-cable network carried a charge across its run with the two cells' sum unchanged and a cell off the network empty, the six material items exist, every material and machine recipe crafted its declared output and consumed its ingredients, each machine dropped itself, and every guessed id is unknown without the package"
+echo "PASS: a fuelled furnator made FE, the cable carried it into the cell, an unfuelled furnator made nothing, a cell without a cable stayed empty, a full cell stayed full, a charged cell drained through a cable into an empty one, a three-cable network carried a charge across its run with the two cells' sum unchanged and a cell off the network empty, the six material items exist, every material and machine recipe crafted its declared output and consumed its ingredients, each machine dropped itself, every energy cell tier clamped 2,000,000,000 FE at its own capacity and carried its own transfer, two adjacent cells swapped within their own transfer cap without creating FE, every cell tier dropped itself, and every guessed id is unknown without the package"

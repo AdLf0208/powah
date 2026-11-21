@@ -5,8 +5,12 @@ dielectric/capacitor crafting family (slice 2). Since 0.2.0 the package root **i
 (`horizon-mod.toml` + `assets/` + `data/` beside `src/`), and `powah.hmod` is the one built
 artifact.
 
-**Slice 3 (the cable network, 0.2.3) changed no file here**: it is Rust only, and the package's
-content entries are the slice-2 set unchanged (43 `assets/`, 38 `data/`; 90 entries in total).
+**Slice 3 (the cable network, 0.2.3) changed no file here**: it is Rust only.
+**Slice 4 (the energy cell ladder, 0.2.4)** adds the six higher tiers' blocks, blockstates, block and
+item models, item definitions, textures, loot tables, the pickaxe/needs-iron tag entries, their
+creative-tab rows, and the one craftable recipe (`energy_cell_basic`) with its advancement — 44 new
+entries, for **134** in the package. The five higher cells' recipes are deliberately absent: their
+inputs come from the unported Energizing Orb (see `notes.md`, `blocked(energizing-orb)`).
 
 Every file comes from the raw carry of the ATM10 jar `Powah-6.2.10.jar`
 (Crash Assistant `modlist.json`; Modrinth SHA-1
@@ -60,6 +64,24 @@ Two patches, both from the pin's recipe loader (proved in game, see `notes.md`):
    `ingredients.len() != stacks.len()`): a player who puts three coals in one cell matches
    nothing. The recipes stay upstream's (shapeless); the in-game leg places one item per cell,
    and the deviation is recorded in `notes.md` as a pin finding, not a port change.
+
+## Slice 4 — the energy cell tiers (2026-11-21)
+
+Six blocks and their items, carried from the same jar with the starter cell's patched block
+definition (upstream's `AbstractEnergyBlock`: 2.0/20.0, metal sounds, `occludes: false`, stack 1):
+
+| Family | Files |
+|---|---|
+| blocks (6) | `data/powah/horizon/block/energy_cell_{basic,hardened,blazing,niotic,spirited,nitro}.json` |
+| blockstates / block models / item models / item definitions (6 each) | `assets/powah/…` under `blockstates/`, `models/block/`, `models/item/`, `items/` |
+| textures (6) | `assets/powah/textures/block/energy_cell_<tier>.png` |
+| loot tables (6) | `data/powah/loot_table/blocks/energy_cell_<tier>.json` |
+| tags | the six join `minecraft:mineable/pickaxe` and `minecraft:needs_iron_tool` |
+| creative tab | the six join `data/powah/horizon/creative_tab/machines.json` |
+| recipe + advancement | `data/powah/recipe/crafting/energy_cell_basic.json` only (`ici/cdc/ici` with `capacitor_basic`, `dielectric_casing`, iron) |
+
+The five other recipes need `powah:steel_energized` / `powah:crystal_*`, which only the Energizing Orb
+makes; they are not carried and are recorded `blocked(energizing-orb)` in `notes.md`.
 
 ## Where this content lives now (0.2.0)
 
