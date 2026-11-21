@@ -1,4 +1,4 @@
-# Powah → Horizon — slice 1: Furnator, Energy Cell, Energy Cable
+# Powah → Horizon — slices 1–3: Furnator, Energy Cell, the Energy Cable network, the dielectric family
 
 Ported from **Powah 6.2.10** (`Technici4n/Powah`, **LGPL-3.0-only**), the exact
 ATM10 NeoForge 1.21.1 jar `Powah-6.2.10.jar` (Modrinth SHA-1
@@ -229,7 +229,8 @@ round trip in this environment is ~2 s, far longer than a tick).
 1. **No GUI.** Upstream opens a container screen for the furnator/cell/cable;
    this slice inserts fuel through the container (automation's path, what the
    e2e uses) and reads state with `/powah info`.
-2. **No cable network.** Upstream's cables share one buffer across a connected
+2. **No cable network** — **closed by slice 3** (`## Slice 3 — the cable network`); the
+   slice's gap line, kept verbatim: Upstream's cables share one buffer across a connected
    network and forward an insertion through it in one call. The port moves FE
    one cable hop per tick between *adjacent block entities*, so a run of two or
    more cables does not relay. The e2e's chain is exactly one cable (the slice's
@@ -798,3 +799,216 @@ Version: **0.2.1 → 0.2.2** (one patch). The published `[[versions]]` record ke
 0.2.2 at publish time — this port does not touch the registry entry.
 
 Skills: superpowers/using-superpowers, brainstorming, writing-plans, test-driven-development, verification-before-completion; BeautifulRust/none (no Rust change; `rust-best-practices` loaded and the Rust tree is untouched)
+
+## Slice 3 — the cable network (2026-11-21)
+
+### The slice, quoted from this port's own gaps
+
+`## Deviations and gaps (slice 1)`, item 2 (the notes' own next-slice authority):
+
+> **No cable network.** Upstream's cables share one buffer across a connected
+> network and forward an insertion through it in one call. The port moves FE one
+> cable hop per tick between *adjacent block entities*, so a run of two or more
+> cables does not relay. The e2e's chain is exactly one cable (the slice's brief).
+
+`FINDINGS.md` §Energy Cable reads the same mechanic upstream (`CableTile` /
+`CableNet`: walk the connected same-tier cables round-robin and push into each
+cable's energy side). So this is a family in the jar, named in the port's gaps.
+
+**Why it fits `machines`:** it is a block-entity relay — the cable's
+`BlockEntityPart` tick plus the level's energy capability and `move_energy`, the
+same three API pieces slice 1 already declares; no renderer, no GUI, no new item,
+no client half. And it is implementable at the pin: `LevelRef::block(host,
+pos)?.id(host)` reads a neighbour's block id, which is all a network walk needs.
+
+**Not chosen (and why):** item charging (gap 4) needs `item_energy_buffer` *and*
+a chargeable item — Powah's batteries are unported, so nothing in the package can
+be charged and the assertion could not fail; the comparator (gap 7) and side
+config/redstone (gap 6) are one-hook families; the other six tiers (gap 11) name
+no single next machine and need a full content carry first.
+
+### What it ships
+
+No content file changed: the package still carries the same **90 entries** (43
+`assets/`, 38 `data/`, 3 `src/`, the 6 root documents). All of slice 3 is Rust.
+
+| File | Change |
+|---|---|
+| `src/runtime.rs` | The cable planner's loop became a private `plan(sides, transfer, rotation)`; `cable_moves` (six sides) and the new **`network_moves(ports, transfer, rotation)`** both delegate to it. 5 new tests. |
+| `src/powah.rs` | `discover_cables` (breadth-first walk over same-tier cable blocks, capped at `NETWORK_MAX_CABLES = 1024`), `relay_network` (gathers the network's non-cable energy sides once per position, plans once, one transaction per move), and `on_level_tick_post` now plans each network once per tick. The single-hop `relay` is gone. |
+
+The machine numbers are unchanged (furnator 20,000 / 80 / 20 FE/t, cell
+1,000,000 / 1,000 a side, cable 500 FE/t). The **network spends one cable's 500
+FE/t per tick**, not one per cable: the readout's "moves up to 500 FE/t" stays true
+for the whole run, and a longer run is not faster. Upstream caps *each* energy
+side at a cable's transfer; this port pulls, so the network is one relay and its
+budget is one cable's rate. That is a recorded deviation (below), not a defect —
+it keeps slice 1's measured number.
+
+### TDD: the red proof, quoted
+
+`network_moves` was declared with a `todo!()` body and the five tests written
+against it, then run (`ports/_shared/evidence/powah/slice3-test-red.log`):
+
+```text
+---- runtime::tests::a_network_relays_across_the_cables_between_the_source_and_the_sink stdout ----
+
+thread 'runtime::tests::a_network_relays_across_the_cables_between_the_source_and_the_sink' (1797) panicked at src/runtime.rs:209:5:
+not yet implemented: the cable network planner
+...
+test result: FAILED. 23 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+All five failed for the same reason (the planner was not written), and the five
+names were:
+
+- `a_network_relays_across_the_cables_between_the_source_and_the_sink`
+- `a_network_spends_one_cable_s_rate_not_a_rate_per_cable`
+- `one_cable_is_the_same_plan_as_its_six_sides` (the generalization is
+  behaviour-preserving; it cross-checks `cable_moves` against `network_moves`)
+- `a_network_without_a_giver_or_a_taker_moves_nothing`
+- `the_network_rotation_starts_at_another_port`
+
+After the implementation the same command printed **28 passed, 0 failed**
+(`slice3-test-green.log`), 23 slice-1/2 tests plus the five.
+
+### In-game (parity rule)
+
+The leg is a **red→green against the previous package**: the 0.2.2 build (made for
+`0b14f8a`, kept at `ports/_shared/evidence/powah/powah-0.2.2.hmod`) run with the
+new scenario delivers **0 FE** across the three-cable row and fails there:
+
+```text
+  source: Energy Cell at 0,100,5: 100000/1000000 FE (comparator 1, t=758)
+  sink:   Energy Cell at 4,100,5: 0/1000000 FE (comparator 0, t=624)
+  off the network: Energy Cell at 0,103,5: 0/1000000 FE (comparator 0, t=763)
+FAIL: a three-cable network did not relay FE into the cell: Energy Cell at 4,100,5: 0/1000000 FE (comparator 0, t=624)
+```
+
+(`ports/_shared/evidence/powah-e2e/e2e-slice3-oldpackage.log`, `EXIT:1`.) 0.2.3,
+the same scenario (`e2e-launcher.log`, `EXIT:0`):
+
+```text
+== slice 3: a run of three cables relays as one network ==
+  block(0,100,5) = powah:energy_cell_starter
+  block(1,100,5) = powah:energy_cable_starter
+  block(2,100,5) = powah:energy_cable_starter
+  block(3,100,5) = powah:energy_cable_starter
+  block(4,100,5) = powah:energy_cell_starter
+  block(0,103,5) = powah:energy_cell_starter
+  set(0,100,5) = Energy Cell at 0,100,5: 100000/1000000 FE (comparator 1, t=698)
+  source: Energy Cell at 0,100,5: 99500/1000000 FE (comparator 1, t=757)
+  sink:   Energy Cell at 4,100,5: 500/1000000 FE (comparator 0, t=747)
+  off the network: Energy Cell at 0,103,5: 0/1000000 FE (comparator 0, t=765)
+  split: Energy Cell at 0,100,5: 99500/1000000 FE (comparator 1, t=784)
+  split: Energy Cell at 4,100,5: 500/1000000 FE (comparator 0, t=794)
+```
+
+The three assertions, each able to fail:
+
+1. **the run relays** — the sink holds > 0 (0 on 0.2.2, 0 on `SELFTEST=network`);
+2. **nothing is created or lost** — the middle cable is broken so the two cells
+   stop trading, and then the two readings must sum to exactly the 100,000 the
+   source was set to (99,500 + 500);
+3. **the walk is what carries it** — a cell three blocks above the source, reached
+   by no cable, stays at 0, so the charge did not teleport.
+
+### Ladder (0.2.3, pin `0a875da`)
+
+Every compile step ran in `ports/powah`, `CARGO_INCREMENTAL=0`, inside a
+`ports/tools/build-slot.sh run --job W1-powah --port ports/powah --step …` lease
+with `BUILD_LOCAL=1`; logs in `ports/_shared/evidence/powah/`.
+
+| Step | Command | Result |
+|---|---|---|
+| unit tests | `cargo test --offline` | **28 passed**, 0 failed (`sdk-test.log`) |
+| lints | `cargo clippy --all-targets --offline -- -D warnings` | exit 0, 0 warnings (`sdk-clippy.log`) |
+| formatting | `cargo fmt --check` | exit 0, empty (`sdk-fmt.log`) |
+| package, twice | `rm -f Cargo.lock; cargo horizon-mod build` ×2, `cmp` | **byte-identical, 85,383 B** (`sdk-build{,-second}.log`) |
+| registry check | `cargo horizon-mod check powah.hmod` | **exit 0**, `powah 0.2.3 (native-mod, format native-1/0a875da…/e59da90…)`, `85383 bytes, SHA-256 e9583d43…9b3b9c` (`sdk-check.log`) |
+| fits the pin | `cargo horizon-mod fits powah.hmod --build 0a875da` | `0a875da  made for`, exit 0 (`sdk-fits.log`) |
+| fits **another** build | `cargo horizon-mod fits powah.hmod --build 0b14f8a` | `0b14f8a  fits`, exit 0 (`sdk-fits-nightly.log`) |
+| what it uses | `cargo horizon-mod check --uses` | 312 items, made for `0a875da` |
+| package gate | `python3 ports/tools/verify-sdk-package.py powah` | **1/1**, runtime byte-identical, no packed `Cargo.lock`, 90 entries |
+
+The `fits` pair matters: `--build 0a875da` is the pin and only prints `made for`
+(a tautology); the same package against the previous pin `0b14f8a` says **fits**,
+i.e. every one of its 312 API items still resolves there.
+
+In-game legs (launcher build `native-0a875da-e8d17b7a402b`, instance
+`powah-e2e`; logs in `ports/_shared/evidence/powah-e2e/`):
+
+| Leg | Command | Result |
+|---|---|---|
+| main | `launcher-game.sh build powah` + `build-slot.sh run --step e2e -- bash tools/e2e.sh` | **PASS** + `EXIT:0` (`e2e-launcher.log`) |
+| control (same Nightly, no package) | `GAME=$CONTROL_GAME …` | `FAIL: expected powah:furnator_starter at 0,100,0, got 'minecraft:air'` + `EXIT:1` (`e2e-control.log`) |
+| selftest (slice 3's flip) | `SELFTEST=network …` | `FAIL: SELFTEST flipped: the three-cable network relayed FE, as it should` + `EXIT:1` (`e2e-selftest-network.log`) |
+| selftest (slice 1's flip) | `SELFTEST=1 …` | `FAIL: SELFTEST flipped: the unfuelled furnator made no FE, as it should` + `EXIT:1` (`e2e-selftest.log`) |
+| the previous package | the 0.2.2 build + the same scenario | `EXIT:1` at the network assertion (`e2e-slice3-oldpackage.log`) |
+| log gate | `python3 ports/tools/check-e2e-logs.py powah-e2e --strict` | `logs=9 ok=9 missing-exit=0 bad-exit=0`, exit 0 |
+
+The main log also carries the in-script control leg (the same Nightly without
+powah knows neither block id and neither item).
+
+### Coverage (parity rule, the family this slice adds)
+
+| Family (from the jar) | Status |
+|---|---|
+| cable **network** (`CableNet`: connected same-tier cables forward one insertion) | **tested** — a source cell, three cables and a sink cell in one row: the charge crosses the run (0 on 0.2.2), the split cells sum to the 100,000 set, and a cell off the network stays 0; the planner's five rules are unit-tested |
+| single-cable relay (slice 1) | **tested** — unchanged: `one_cable_is_the_same_plan_as_its_six_sides` compares the new network plan with the six-side plan, and the slice-1 phases still pass in the same run |
+| every other family | as slice 2's table: ported and tested, or `not ported` with the gap that names it |
+
+### Deviations slice 3 adds
+
+1. **One cable's rate per network per tick** (500 FE/t), not one per cable: the
+   port pulls, so the network is one relay; upstream pushes into each energy side
+   at up to a cable's transfer. A ten-cable run therefore carries the same 500
+   FE/t as a one-cable run.
+2. **The walk is capped at 1,024 cables** per network (`NETWORK_MAX_CABLES`).
+   Upstream's `CableNet` is unbounded; the cap bounds one tick's work and is far
+   past any pack's run.
+3. **A block touching two cables of one network is one port** (deduplicated by
+   position), so a cell flanked by two cables of the same network is filled once
+   per plan rather than twice. With deviation 1's single budget this changes no
+   observable rate.
+4. **Per-tier isolation is by block id**: only `powah:energy_cable_starter` exists
+   in this slice, so the walk treats every cable it finds as the same network. When
+   the other six tiers arrive, the membership test becomes same-tier.
+5. The slice-1 gaps that remain are unchanged: no GUI, no item charging, no side
+   config/redstone modes, no comparator hook, breaking a machine loses its FE, the
+   other six tiers and ~15 machines unported, `/powah set` is a harness control.
+
+**Upstream defects fixed:** none — the single-hop relay was the *port's*
+limitation (slice 1's recorded scope), not a defect in Powah 6.2.10, so the
+upstream-defect procedure did not apply.
+
+### Pin findings this slice measured (for the next port)
+
+1. **The pin moved mid-slice** (`0b14f8a` → `0a875da`, mixins unchanged). Every
+   number above is at `0a875da`; the package declares it, and the launcher's
+   `check_pins` refuses a package pinned elsewhere. `fits --build <the previous
+   pin>` is the run that proves something.
+2. **A launcher instance that already holds an older install of the port refuses
+   the new package.** `native-build --instance e2e` (an instance shared with a
+   previous `powah` install from `0b14f8a`) answered *"powah's package was made by
+   an older tool and doesn't say what it uses, so it works on the Nov 20 update
+   only"*, although the same folder carries a valid `uses.json` (312 entries,
+   `made_for` = the pin) and `cargo horizon-mod fits` on the folder is green. With
+   a dedicated instance (`HORIZON_E2E_INSTANCE=powah-e2e`) the identical folder
+   built in 7 s. **Give each port its own instance**, which is also what stops two
+   agents rebuilding each other's instance.
+3. **Two `info` reads are ~20–40 ticks apart, and adjacent cells swap energy every
+   tick**, so a sum of two live readings is *not* the total: the first version of
+   the conservation assertion read 100,500 (source at `t=757`, sink at `t=733`) on
+   a balanced relay. Freeze the transfer (break a cable) before summing.
+4. **`BUILD_LOCAL=1` for evidence integrity.** A forwarded step runs on the far
+   box and then `remote-slot.sh` pulls `ports/_shared/evidence/<mod>/` back, which
+   **overwrote a fresh local `sdk-test.log` with the far box's older file of the
+   same name** (mtime and content from the previous day). Local runs keep each log
+   an artefact of the run it names.
+
+Version: **0.2.2 → 0.2.3** (one patch), pin `0b14f8a` → `0a875da`. The published
+`[[versions]]` record keeps 0.2.2 and gains 0.2.3 at publish time — this port does
+not touch the registry entry.
+
+Skills: superpowers/using-superpowers, brainstorming, writing-plans, test-driven-development, verification-before-completion; BeautifulRust/rust-best-practices

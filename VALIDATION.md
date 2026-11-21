@@ -1,5 +1,11 @@
-# Validation — Powah slices 1 and 2
+# Validation — Powah slices 1, 2 and 3
 
+> **0.2.3 (slice 3, the cable network)** is recorded in [`notes.md`](notes.md#slice-3--the-cable-network-2026-11-21):
+> the slice and its gap line, the red proof (five `todo!()` tests, 23 passed / 5 failed), the
+> ladder at pin `0a875da` (28 tests, clippy 0 warnings, `fmt --check` clean, two byte-identical
+> builds of 85,383 B, `check`, `fits` against the pin **and** against `0b14f8a`, gate 1/1) and the
+> in-game legs (main `PASS`+`EXIT:0`, control / `SELFTEST=network` / `SELFTEST=1` at `EXIT:1`,
+> the 0.2.2 build red at `EXIT:1`, and `check-e2e-logs.py --strict` 9/9).
 > **0.2.2 (slice 2, the dielectric/capacitor family) and 0.2.1 (the review fixes) are recorded in
 > [`notes.md`](notes.md)**: [`## Slice 2 …`](notes.md#slice-2--the-dielectriccapacitor-crafting-family-2026-11-20)
 > carries its ladder, its in-game legs and the coverage table, and

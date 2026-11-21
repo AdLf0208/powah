@@ -144,34 +144,53 @@ pub struct Transfer {
     pub amount: i32,
 }
 
-/// The moves one cable makes in a tick: from each neighbour that can give into
-/// each that can take, up to the cable's transfer rate in total. `rotation`
-/// rotates the starting side so two equal sources share the cable as upstream's
-/// round-robin does. A cable stores nothing, so no move starts and ends at the
-/// same neighbour, and the total never exceeds `transfer`.
+/// The moves one cable makes in a tick, from its six sides as `native_energy`
+/// presents them: from each neighbour that can give into each that can take, up
+/// to the cable's transfer rate in total. `rotation` rotates the starting side so
+/// two equal sources share the cable as upstream's round-robin does. A cable
+/// stores nothing, so no move starts and ends at the same neighbour, and the
+/// total never exceeds `transfer`.
+///
+/// This is [`network_moves`] on one cable's six sides; both delegate to the one
+/// planner, so the single-cable plan slice 1 proved in game and the network plan
+/// cannot drift apart.
 #[must_use]
 pub fn cable_moves(
     neighbours: &[Option<Neighbour>; 6],
     transfer: i32,
     rotation: usize,
 ) -> Vec<Transfer> {
+    plan(neighbours, transfer, rotation)
+}
+
+/// The one planner: `sides` is every place the relay can reach, in the order the
+/// caller gathered them (`None` for an unreachable place). Upstream's
+/// `CableNet` walks the connected cables round-robin and pushes into each energy
+/// side at most a cable's transfer; here one plan covers the whole relay, so the
+/// budget is spent once across every source and sink in it.
+fn plan(sides: &[Option<Neighbour>], transfer: i32, rotation: usize) -> Vec<Transfer> {
     let mut moves = Vec::new();
+    let count = sides.len();
+    if count == 0 {
+        return moves;
+    }
+    let start = rotation % count;
     let mut budget = transfer.max(0);
-    let mut sink = *neighbours;
-    for step in 0..6 {
+    let mut sink = sides.to_vec();
+    for step in 0..count {
         if budget == 0 {
             break;
         }
-        let from = (rotation + step) % 6;
-        let Some(source) = neighbours[from] else {
+        let from = (start + step) % count;
+        let Some(source) = sides[from] else {
             continue;
         };
         let mut available = source.available();
-        for other in 0..6 {
+        for other in 0..count {
             if available == 0 || budget == 0 {
                 break;
             }
-            let to = (rotation + other) % 6;
+            let to = (start + other) % count;
             if to == from {
                 continue;
             }
@@ -194,6 +213,20 @@ pub fn cable_moves(
         }
     }
     moves
+}
+
+/// The moves one **cable network** makes in a tick. `ports` are the network's
+/// external energy sides — every neighbour that is not a cable, of every cable in
+/// the network — in the order the caller gathered them; `from`/`to` index that
+/// slice.
+///
+/// The network is one relay: it spends one cable's transfer per tick, not one per
+/// cable, so a longer run carries the same rate and the readout's "moves up to
+/// 500 FE/t" stays true for the whole network.
+#[must_use]
+pub fn network_moves(ports: &[Neighbour], transfer: i32, rotation: usize) -> Vec<Transfer> {
+    let sides: Vec<Option<Neighbour>> = ports.iter().copied().map(Some).collect();
+    plan(&sides, transfer, rotation)
 }
 
 #[cfg(test)]
@@ -413,6 +446,108 @@ mod tests {
         assert_eq!(
             rotated[0].from, 1,
             "side 1 goes first when the rotation starts there"
+        );
+    }
+
+    #[test]
+    fn a_network_relays_across_the_cables_between_the_source_and_the_sink() {
+        let ports = [
+            buffer(1_000, 1_000_000, 1_000, 1_000),
+            buffer(0, 1_000_000, 1_000, 1_000),
+        ];
+        assert_eq!(
+            network_moves(&ports, CABLE_TRANSFER, 0),
+            vec![Transfer {
+                from: 0,
+                to: 1,
+                amount: CABLE_TRANSFER
+            }],
+            "a source and a sink on two different cables of one network"
+        );
+    }
+
+    #[test]
+    fn a_network_spends_one_cable_s_rate_not_a_rate_per_cable() {
+        let ports = [
+            buffer(10_000, 20_000, 0, 500),
+            buffer(10_000, 20_000, 0, 500),
+            buffer(0, 1_000_000, 1_000, 0),
+        ];
+        let moves = network_moves(&ports, CABLE_TRANSFER, 0);
+        let total: i32 = moves.iter().map(|m| m.amount).sum();
+        assert_eq!(total, CABLE_TRANSFER, "the network is one relay");
+        assert_eq!(
+            moves[0],
+            Transfer {
+                from: 0,
+                to: 2,
+                amount: CABLE_TRANSFER
+            },
+            "the first source spends the whole budget"
+        );
+    }
+
+    #[test]
+    fn one_cable_is_the_same_plan_as_its_six_sides() {
+        let mut sides = empty();
+        sides[0] = Some(buffer(1_000, 20_000, 0, 80));
+        sides[1] = Some(buffer(0, 1_000_000, 1_000, 1_000));
+        let ports = [sides[0].unwrap(), sides[1].unwrap()];
+        let six = cable_moves(&sides, CABLE_TRANSFER, 0);
+        let net = network_moves(&ports, CABLE_TRANSFER, 0);
+        assert_eq!(six.len(), 1, "one move, as slice 1's cable made");
+        assert_eq!(net.len(), 1);
+        assert_eq!(six[0].amount, net[0].amount);
+        assert_eq!(six[0].amount, 80, "the source's own per-call limit");
+
+        let mut shared = empty();
+        shared[0] = Some(buffer(10_000, 20_000, 0, 500));
+        shared[1] = Some(buffer(10_000, 20_000, 0, 500));
+        shared[2] = Some(buffer(0, 1_000_000, 1_000, 0));
+        let ports = [shared[0].unwrap(), shared[1].unwrap(), shared[2].unwrap()];
+        let six = cable_moves(&shared, CABLE_TRANSFER, 1);
+        let net = network_moves(&ports, CABLE_TRANSFER, 1);
+        assert_eq!(six[0].from, 1);
+        assert_eq!(net[0].from, 1, "the rotation moves the same way");
+        assert_eq!(six[0].amount, net[0].amount);
+    }
+
+    #[test]
+    fn a_network_without_a_giver_or_a_taker_moves_nothing() {
+        assert!(
+            network_moves(&[], CABLE_TRANSFER, 0).is_empty(),
+            "no port, no move"
+        );
+        let sink_only = [buffer(0, 100, 100, 0)];
+        assert!(
+            network_moves(&sink_only, CABLE_TRANSFER, 0).is_empty(),
+            "nothing in the network can give"
+        );
+        let source_only = [buffer(100, 100, 0, 100)];
+        assert!(
+            network_moves(&source_only, CABLE_TRANSFER, 0).is_empty(),
+            "one port cannot give to itself"
+        );
+        let battery = [buffer(100, 1_000, 100, 100)];
+        assert!(
+            network_moves(&battery, CABLE_TRANSFER, 0).is_empty(),
+            "a battery cannot charge itself"
+        );
+    }
+
+    #[test]
+    fn the_network_rotation_starts_at_another_port() {
+        let ports = [
+            buffer(10_000, 20_000, 0, 500),
+            buffer(10_000, 20_000, 0, 500),
+            buffer(0, 1_000_000, 1_000, 0),
+        ];
+        assert_eq!(network_moves(&ports, CABLE_TRANSFER, 0)[0].from, 0);
+        assert_eq!(network_moves(&ports, CABLE_TRANSFER, 1)[0].from, 1);
+        assert_eq!(
+            network_moves(&ports, CABLE_TRANSFER, 11)[0].from,
+            0,
+            "a rotation past the port count wraps: 11 % 3 leaves the sink first"
         );
     }
 

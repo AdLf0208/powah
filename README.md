@@ -1,4 +1,4 @@
-# Powah for Horizon — slices 1 and 2
+# Powah for Horizon — slices 1–3
 
 A clean-room Rust rewrite of **Powah! (Rearchitected) 6.2.10** (`Technici4n/Powah`,
 **LGPL-3.0-only**) for Horizon 26.3, as one flat SDK package (`api = "0.2"`): the
@@ -16,6 +16,12 @@ Slice 2 is the **dielectric/capacitor crafting family** — `powah:dielectric_pa
 and `capacitor_basic_tiny`, with their eight recipes — which is what the three
 machine recipes above need, so all three now craft.
 
+Slice 3 is the **cable network**: every cable connected to a cable through cables is
+one relay (upstream's `CableNet`), so a charge crosses a run of three cables into a
+cell at the far end (0.2.2 moved nothing across more than one hop). The network
+carries 500 FE/t — one cable's rate for the whole run — and creates or loses no FE
+across it.
+
 All three declare a real `Capabilities.Energy.BLOCK` buffer (the amount is the int
 `energy` in the block entity's saved compound), so other machines can fill and
 drain the furnator and the cell; the cable is a pure relay.
@@ -32,10 +38,10 @@ drain the furnator and the cell; the cable is a pure relay.
 
 ```text
 powah.hmod            the delivered package (horizon-mod.toml + Cargo.toml + src/ + assets/ + data/)
-horizon-mod.toml      the only manifest and identity: id, version 0.2.2, api 0.2, [native] pins
+horizon-mod.toml      the only manifest and identity: id, version 0.2.3, api 0.2, [native] pins
 Cargo.toml            one crate; its only dependency is horizon-mod-api from .horizon/sdk/
 src/lib.rs            the one `#[mod_api::horizon_mod] impl Hooks`
-src/powah.rs          the glue: the three block entity Parts, the queue, the buffers, the command
+src/powah.rs          the glue: the three block entity Parts, the queue, the buffers, the cable network, the command
 src/runtime.rs        the pure machine rules and their tests (no mod_api types)
 assets/powah/         the carried blockstates, models, items, textures and lang
 data/powah/           the carried blocks, items, loot, recipes, tags, the creative tab
@@ -81,4 +87,10 @@ GAME=<that instance's horizon-client> tools/e2e.sh
 GAME=<that game> CONTROL_GAME=<an unmodified build> tools/e2e.sh   # the negative leg
 SELFTEST=1 GAME=<that game> tools/e2e.sh                           # the fail-capable leg
 SELFTEST=craft GAME=<that game> tools/e2e.sh                       # the recipe leg's fail-capable run
+SELFTEST=network GAME=<that game> tools/e2e.sh                     # the cable network's fail-capable run
 ```
+
+Give the port **its own launcher instance** (e.g. `--instance powah-e2e`, and the
+same in `HORIZON_E2E_INSTANCE`): an instance that already holds an older install
+of the port answers *"was made by an older tool and doesn't say what it uses"* and
+leaves the mod out of the build (measured 2026-11-21, `notes.md` §Pin findings 2).

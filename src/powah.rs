@@ -11,7 +11,7 @@
 //! output is a declaration now (`Registrar::block_energy`, keyed by the block),
 //! so the buffer's numbers have one home, [`battery_of`], which the cable's
 //! relay also reads when it plans a move.
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use mod_api::{
@@ -23,7 +23,7 @@ use mod_api::{
 
 use crate::runtime::{
     CABLE_TRANSFER, CELL_CAPACITY, CELL_TRANSFER, FURNATOR_CAPACITY, FURNATOR_TRANSFER, Furnator,
-    Neighbour, cable_moves, clamp_energy, comparator_strength, push_amount,
+    Neighbour, clamp_energy, comparator_strength, network_moves, push_amount,
 };
 
 /// The furnator block and its item.
@@ -455,6 +455,9 @@ pub(crate) fn on_level_tick_post(
     level: LevelRef,
     queued: BTreeSet<[i32; 3]>,
 ) {
+    // The cables already covered by a network this tick: every cable in a network
+    // ticks, so without this a run of N cables would plan the same relay N times.
+    let mut planned: BTreeSet<[i32; 3]> = BTreeSet::new();
     for pos in queued {
         let Some(kind) = block_at(&*host, level, pos).as_deref().and_then(Kind::of) else {
             continue;
@@ -462,7 +465,12 @@ pub(crate) fn on_level_tick_post(
         match kind {
             Kind::Furnator => push_out(host, level, pos, FURNATOR_TRANSFER),
             Kind::Cell => push_out(host, level, pos, CELL_TRANSFER),
-            Kind::Cable => relay(host, level, pos),
+            Kind::Cable => {
+                if planned.contains(&pos) {
+                    continue;
+                }
+                planned.extend(relay_network(host, level, pos));
+            }
         }
     }
 }
@@ -515,36 +523,111 @@ fn push_out(host: &mut dyn ServerHost, level: LevelRef, pos: [i32; 3], transfer:
     }
 }
 
-/// The cable's move: it reads each neighbour through the side facing it and lets
-/// the pure planner decide where the energy goes (upstream's round-robin is the
-/// rotation, seeded by the game time). The cable stores nothing, so no move starts
-/// and ends at the same neighbour.
-fn relay(host: &mut dyn ServerHost, level: LevelRef, pos: [i32; 3]) {
-    let mut sides = [None; 6];
-    for (index, side) in Direction::ALL.into_iter().enumerate() {
-        sides[index] = neighbour(host, level, offset(pos, side), side.opposite());
+/// The largest cable network one tick walks. Upstream's `CableNet` is unbounded;
+/// this cap keeps one very long run from costing a tick, and is far past any
+/// pack's cable run (recorded as a deviation from upstream's unbounded walk).
+const NETWORK_MAX_CABLES: usize = 1024;
+
+/// One external energy side of a cable network: the block the relay reaches and
+/// the side of the network cable it hangs off, so the face the capability is read
+/// and moved on is `cable_side.opposite()`.
+#[derive(Clone, Copy)]
+struct Port {
+    pos: [i32; 3],
+    cable_side: Direction,
+}
+
+/// The cables one network holds: every same-tier cable reachable from `start`
+/// through cables only, in position order. A network stops at the first block
+/// that is not a cable, which is what makes a run of cables relay while a wall
+/// of stone does not.
+fn discover_cables(
+    host: &mut dyn ServerHost,
+    level: LevelRef,
+    start: [i32; 3],
+) -> BTreeSet<[i32; 3]> {
+    let mut cables = BTreeSet::from([start]);
+    let mut queue = VecDeque::from([start]);
+    while let Some(pos) = queue.pop_front() {
+        for side in Direction::ALL {
+            if cables.len() >= NETWORK_MAX_CABLES {
+                break;
+            }
+            let next = offset(pos, side);
+            if cables.contains(&next) {
+                continue;
+            }
+            if block_at(&*host, level, next).as_deref().and_then(Kind::of) == Some(Kind::Cable) {
+                cables.insert(next);
+                queue.push_back(next);
+            }
+        }
     }
-    let rotation = level.game_time(&*host).unwrap_or(0).rem_euclid(6) as usize;
-    for step in cable_moves(&sides, CABLE_TRANSFER, rotation) {
-        let from = Direction::ALL[step.from];
-        let to = Direction::ALL[step.to];
-        let source_pos = offset(pos, from);
-        let target_pos = offset(pos, to);
+    cables
+}
+
+/// A cable's tick: gather the whole network, then plan and run its moves once.
+/// Upstream's `CableNet` forwards one insertion through every connected cable of
+/// the same tier; the port pulls, so one plan for the whole network per tick is
+/// the same relay — a run of two or more cables now moves FE, where slice 1
+/// moved it only between the block entities beside one cable.
+///
+/// Answers the network it covered, so the level tick does not plan it again.
+fn relay_network(
+    host: &mut dyn ServerHost,
+    level: LevelRef,
+    start: [i32; 3],
+) -> BTreeSet<[i32; 3]> {
+    let cables = discover_cables(host, level, start);
+    let mut ports: Vec<Neighbour> = Vec::new();
+    let mut places: Vec<Port> = Vec::new();
+    for cable in &cables {
+        for side in Direction::ALL {
+            let pos = offset(*cable, side);
+            let Some(block) = block_at(&*host, level, pos) else {
+                continue;
+            };
+            if Kind::of(&block) == Some(Kind::Cable) {
+                continue; // inside the network: neither a source nor a sink
+            }
+            // A block touching two cables of one network is one place: reading it
+            // through both cables would plan the same energy twice.
+            if places.iter().any(|place| place.pos == pos) {
+                continue;
+            }
+            let Some(buffer) = neighbour(host, level, pos, side.opposite()) else {
+                continue;
+            };
+            ports.push(buffer);
+            places.push(Port {
+                pos,
+                cable_side: side,
+            });
+        }
+    }
+    let rotation = level.game_time(&*host).unwrap_or(0).max(0) as usize;
+    for step in network_moves(&ports, CABLE_TRANSFER, rotation) {
+        let from = places[step.from];
+        let to = places[step.to];
         let want = u32::try_from(step.amount).unwrap_or(0);
         let _ = host.transaction(|host, tx| -> Result<u32, ()> {
-            let Some(source) =
-                level.capability(&mut *host, &ENERGY, source_pos, Some(from.opposite()))
-            else {
+            let Some(source) = level.capability(
+                &mut *host,
+                &ENERGY,
+                from.pos,
+                Some(from.cable_side.opposite()),
+            ) else {
                 return Ok(0);
             };
             let Some(target) =
-                level.capability(&mut *host, &ENERGY, target_pos, Some(to.opposite()))
+                level.capability(&mut *host, &ENERGY, to.pos, Some(to.cable_side.opposite()))
             else {
                 return Ok(0);
             };
             move_energy(host, &source, &target, want, tx).map_err(|_| ())
         });
     }
+    cables
 }
 
 /// A neighbour's buffer as the cable reaches it. The capability answers `amount`,

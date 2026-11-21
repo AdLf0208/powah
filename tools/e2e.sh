@@ -51,7 +51,13 @@
 # SELFTEST=1 flips the "no fuel" assertion (it must FAIL), proving the scenario
 # can fail. SELFTEST=craft expects the paste's 24 to be 25 inside
 # `tools/craft_check.py` (it must FAIL there), proving the recipe assertions can
-# fail.
+# fail. SELFTEST=network expects the three-cable run to have delivered nothing
+# (it must FAIL), proving the network assertion can fail.
+#
+# Slice 3 (gap 2, "a run of two or more cables does not relay") adds:
+#  - a source cell, three cables and a sink cell in one row: the charge crosses
+#    the run (0.2.2 delivered nothing), the two cells' sum stays 100000, and a
+#    cell off the network stays empty.
 set -euo pipefail
 export LC_ALL=C
 
@@ -359,6 +365,53 @@ echo "  sink:   $sink_line"
 [ "$(energy_of "$source_line")" -lt 1000 ] || fail "the charged cell did not give any FE: $source_line"
 [ "$(energy_of "$sink_line")" -gt 0 ] || fail "the empty cell took no FE through the cable: $sink_line"
 
+echo "== slice 3: a run of three cables relays as one network =="
+# A fresh row at z=5: source cell - three cables - sink cell. The two cells are
+# three cable hops apart and touch no cable of their own, so only a network that
+# walks its cables can deliver the charge (0.2.2 moved nothing: its cable read
+# only the block entities beside one hop).
+place 0 100 5 powah:energy_cell_starter
+place 1 100 5 powah:energy_cable_starter
+place 2 100 5 powah:energy_cable_starter
+place 3 100 5 powah:energy_cable_starter
+place 4 100 5 powah:energy_cell_starter
+# A cell three blocks above the source, reached by no cable: the network gathers
+# its ports by walking cables, so this one is not on it and must stay empty.
+place 0 103 5 powah:energy_cell_starter
+set_energy 0 100 5 100000
+ctl wait 40
+sink_line=$(info 4 100 5)
+source_line=$(info 0 100 5)
+# Two chat round trips are ~40 ticks apart, so poll the source until the move shows.
+for _ in $(seq 1 8); do
+    [ "$(energy_of "$source_line")" -lt 100000 ] && break
+    ctl wait 10
+    source_line=$(info 0 100 5)
+done
+isolated_line=$(info 0 103 5)
+echo "  source: $source_line"
+echo "  sink:   $sink_line"
+echo "  off the network: $isolated_line"
+[ "$(energy_of "$sink_line")" -gt 0 ] || fail "a three-cable network did not relay FE into the cell: $sink_line"
+[ "$(energy_of "$source_line")" -lt 100000 ] || fail "the charged cell did not give any FE through the network: $source_line"
+[ "$(energy_of "$isolated_line")" = 0 ] || fail "a cell with no cable took FE: $isolated_line"
+if [ "$SELFTEST" = network ]; then
+    echo "  SELFTEST: expecting the three-cable run to deliver nothing (this must fail)"
+    [ "$(energy_of "$sink_line")" = 0 ] || fail "SELFTEST flipped: the three-cable network relayed FE, as it should"
+fi
+# Break the middle cable so the two cells stop trading, then read them: two
+# `info` replies are ~24 ticks apart, and the cells swap energy every tick, so a
+# sum of two live reads is not the total. Frozen, it is: the relay must not
+# create or destroy a single FE across its run.
+ctl command "setblock 2 100 5 minecraft:air" >/dev/null
+ctl wait 10
+frozen_source=$(info 0 100 5)
+frozen_sink=$(info 4 100 5)
+frozen=$(( $(energy_of "$frozen_source") + $(energy_of "$frozen_sink") ))
+echo "  split: $frozen_source"
+echo "  split: $frozen_sink"
+[ "$frozen" = 100000 ] || fail "the network's two cells hold $frozen FE after being split, not the 100000 the source was set to: $frozen_source / $frozen_sink"
+
 echo "== slice 2: the six dielectric/capacitor items are real items =="
 for item in powah:dielectric_paste powah:dielectric_rod powah:dielectric_rod_horizontal \
             powah:dielectric_casing powah:capacitor_basic powah:capacitor_basic_tiny; do
@@ -416,4 +469,4 @@ ctl command "gamemode creative @s" >/dev/null
 ctl command "clear @s" >/dev/null
 ctl wait 3
 
-echo "PASS: a fuelled furnator made FE, the cable carried it into the cell, an unfuelled furnator made nothing, a cell without a cable stayed empty, a full cell stayed full, a charged cell drained through a cable into an empty one, the six material items exist, every material and machine recipe crafted its declared output and consumed its ingredients, each machine dropped itself, and every guessed id is unknown without the package"
+echo "PASS: a fuelled furnator made FE, the cable carried it into the cell, an unfuelled furnator made nothing, a cell without a cable stayed empty, a full cell stayed full, a charged cell drained through a cable into an empty one, a three-cable network carried a charge across its run with the two cells' sum unchanged and a cell off the network empty, the six material items exist, every material and machine recipe crafted its declared output and consumed its ingredients, each machine dropped itself, and every guessed id is unknown without the package"

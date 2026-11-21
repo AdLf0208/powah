@@ -6,10 +6,10 @@
 #
 # Cargo's name and version are not the mod's identity: horizon-mod.toml is.
 name = "powah"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 license = "LGPL-3.0-only"
-description = "Powah for Horizon, slice 1: the starter Furnator, Energy Cell and Energy Cable"
+description = "Powah for Horizon: the starter Furnator, Energy Cell and Energy Cable, their cable network, and the dielectric/capacitor crafting family"
 publish = false
 
 [dependencies]

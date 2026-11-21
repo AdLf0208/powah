@@ -5,6 +5,9 @@ dielectric/capacitor crafting family (slice 2). Since 0.2.0 the package root **i
 (`horizon-mod.toml` + `assets/` + `data/` beside `src/`), and `powah.hmod` is the one built
 artifact.
 
+**Slice 3 (the cable network, 0.2.3) changed no file here**: it is Rust only, and the package's
+content entries are the slice-2 set unchanged (43 `assets/`, 38 `data/`; 90 entries in total).
+
 Every file comes from the raw carry of the ATM10 jar `Powah-6.2.10.jar`
 (Crash Assistant `modlist.json`; Modrinth SHA-1
 `f134ab3e0ace3793abf93129e318eb817898a4e1`, 2,737,991 B) in
