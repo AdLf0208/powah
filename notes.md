@@ -1249,14 +1249,245 @@ Version: **0.2.3 → 0.2.4** (one patch). The published `[[versions]]` record ke
 
 Skills: superpowers/using-superpowers, brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion; BeautifulRust/rust-best-practices
 
+## Slice 5 — the Energizing Orb, the rod ladder and the materials (2026-11-21)
+
+### The slice, quoted from this port's own gaps
+
+`## Slice 4 — the energy cell ladder`, §"What it ships":
+
+> The five other recipes need `powah:steel_energized` / `powah:crystal_*`, which only the Energizing Orb
+> makes; they are not carried and are recorded `blocked(energizing-orb)` in `notes.md`.
+
+and its coverage row, which every one of the five cells carries:
+
+> **blocked(energizing-orb)** — they need `powah:steel_energized` /
+> `powah:crystal_{blazing,niotic,spirited,nitro}`, all made by the unported Energizing Orb
+
+**Chosen:** the **Energizing Orb** (a block entity with seven slots and a recipe-gated buffer), the
+**seven energizing rods** (each an energy capability whose tick fills an orb within
+`energizing_range`) and the **six energizing recipes** that make the five materials, plus the
+crafting recipes they unblock: the five cell tiers slice 4 left blocked, the large capacitor, the
+five capacitor tiers and the rod ladder's own recipes. **Why it fits `machines`:** every piece is
+a shape the port already has — a block entity type with an idle tick, a declared block container,
+a declared block energy buffer, and the `level_tick_post` queue for a move one block entity makes
+into another. No new hook family, no renderer, no GUI, no entity, no worldgen.
+
+**One brief number does not survive the artefact.** The brief asked for a *starter* rod charged to
+20,000 FE to fill a 120,000 FE recipe and then fall by exactly 120,000. The jar's own numbers
+(`DefaultEnergies`) make the starter rod **10,000 FE and 100 FE/t** — it cannot hold, let alone
+give, 120,000 — so the port carries the **whole rod ladder** (the same shape as slice 4's cells)
+and the crystal_blazing leg uses the **nitro** rod: charged to 200,000 it gives 200,000, the orb
+takes exactly its recipe's 120,000, and the rod is left at 80,000 — the exact fall the brief asked
+for, at the tier that can express it. The starter rod keeps its own exact leg (10,000 → 0), which
+is also the first exact read of the ladder (`/powah set 20000` clamps at 10,000).
+
+### What it ships
+
+Rust:
+
+| File | Change |
+|---|---|
+| `src/runtime.rs` | `RodTier` + `rod_tier` (× 10,000 capacity, × 100 transfer), `EnergizingRecipe` + `energizing()` (the jar's six rows), `matches`/`energize` (a bag of filled slots), `orb_step` (the recipe-gated buffer: adopt, clear on a changed recipe, done at the capacity), `orb_fill`, `rod_cooldown`; `ENERGIZING_RANGE` 4, `ORB_SLOTS` 7, `ORB_MAX_ENERGY` 20,000,000, `ROD_WARMUP` 20. 9 new tests |
+| `src/powah.rs` | `Kind::Orb` + `Kind::Rod(tier)`, `RODS`/`ORB`, `orb_container` (7 slots: 0 out, 1–6 in), `orb_battery` (take-only 20M), `rod_battery`, `orb_line`/`rod_line`, `orb_tick`, `rod_tick` (link search + warm-up + exact move), `OrbPart`; `/powah info` and `/powah set` learn both |
+| `src/lib.rs` | the orb's container and buffer, seven rod buffers, the orb's type with `OrbPart`, seven idle rod types (17 block entity types in all) |
+
+Content: see [`CONTENT.md`](CONTENT.md) §"Slice 5" — 9 blocks (orb, seven rods, blazing crystal
+block), 11 plain items (five materials, six capacitors), 21 recipes with their advancements, the
+loot/tags/tab entries, and `tools/carry_slice5.py`, which reproduces the 160 files from the raw
+carry (`--check` green).
+
+### The readouts this slice adds
+
+```text
+Energizing Orb at 0,100,20: 0/10000 FE (recipe powah:steel_energized x2, inputs 2, t=120)
+Energizing Orb at 0,100,20: 0/0 FE (no recipe, t=140)
+Energizing Rod at 0,101,20: 10000/10000 FE (100 FE/t a side, orb 0,100,20, t=120)
+Energizing Rod at 0,101,20: 0/20000000 FE (200000 FE/t a side, no orb, t=40)
+```
+
+### TDD: the red proof, quoted
+
+The rod ladder, the recipe table, the matcher, `orb_step`, `orb_fill` and `rod_cooldown` were
+declared `todo!()` (with `rod_of`/`orb_container`/`orb_battery`/`rod_battery`/`orb_line`/
+`rod_line` in the glue) and the tests written against them, then run
+(`ports/_shared/evidence/powah/slice5-test-red.log`):
+
+```text
+---- runtime::tests::every_energizing_rod_tier_scales_upstreams_numbers stdout ----
+thread 'runtime::tests::every_energizing_rod_tier_scales_upstreams_numbers' (296590) panicked at src/runtime.rs:299:5:
+not yet implemented: the energizing rod tier ladder
+
+---- runtime::tests::every_energizing_recipe_is_the_jars_own_row stdout ----
+thread 'runtime::tests::every_energizing_recipe_is_the_jars_own_row' (296589) panicked at src/runtime.rs:322:5:
+not yet implemented: the energizing recipe table
+...
+---- powah::tests::every_energizing_rod_tier_is_one_of_the_ladder_with_its_own_buffer stdout ----
+thread 'powah::tests::every_energizing_rod_tier_is_one_of_the_ladder_with_its_own_buffer' (296562) panicked at src/powah.rs:238:5:
+not yet implemented: the energizing rod block ids
+
+test result: FAILED. 34 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+The orb's own rule had a second red of its own (`not yet implemented: the orb's recipe-gated
+buffer rule`, `39 passed; 3 failed`) taken before `orb_step` was written. After the
+implementation: **42 passed, 0 failed** (`sdk-test.log`).
+
+### Coverage (parity rule, the family this slice adds)
+
+| Family (from the jar) | Status |
+|---|---|
+| the orb's seven slots (0 result + 6 inputs) | **tested** — `orb_container`'s declaration is pinned by a unit test; in game `item replace block … container.1..4` fills them, the inputs are consumed, and slot 0 holds the result |
+| the orb's recipe-gated buffer | **tested** — the buffer's capacity is the matched recipe's energy, read back by `/powah info` (`0/10000`, `0/120000`, `0/300000`, `0/1000000`, `0/20000000`); a changed recipe clears it (`orb_step` unit test) |
+| the orb with no rod / with no recipe | **tested** — the no-rod orb (10,100,20) and the stick-fed orb (20,100,20) produce nothing after 60 ticks, and the second orb's rod keeps its 5,000 FE |
+| `energizing_rod_{starter..nitro}` | **tested** — the starter tier's exact leg; the nitro tier's four legs; all seven placed and mined for their drop, their buffers pinned by unit tests |
+| a rod's energy capability | **tested** — `/powah set` writes and `/powah info` reads each tier's capacity (`20000` clamps at 10,000) |
+| the energizing recipes (6) | **tested** — steel (10,000 → 2), blazing from powder and from a blaze rod (120,000 → 1), niotic (300,000), spirited (1,000,000), nitro (20,000,000 → 16); the rod's exact fall is asserted in each |
+| the orb, every rod and the material block | **tested** — placed, read back, mined in survival, each drops itself |
+| the orb, seven rods, the large capacitor, five capacitor tiers, five cells, the material block and its 9-back recipe | **tested** — `tools/craft_check.py` crafts all 21 in a real table: output id + count, every ingredient consumed, two off-pattern controls |
+| the orb's GUI/particles, the rod's wrench link, `keepEnergy()` block items, a rod's facing-only energy side, the client renderers | **not ported** — recorded in `## Deviations slice 5 adds` |
+| the `powah:energizing` recipe *files* | **not carried** — a custom recipe type the pin cannot load; the six rows live in `runtime::energizing()` and are matched per filled slot |
+
+### In-game (parity rule)
+
+The launcher build (`ports/_shared/evidence/powah-e2e/launcher-build-0.2.5.log`) shows
+`Compiling powah (1 of 1)`; the main leg is `ports/_shared/evidence/powah-e2e/e2e-launcher.log`,
+`PASS` + `EXIT:0`, quoted (the `{"ok":true…}` lines are the `ctl` acknowledgements, dropped):
+
+```text
+== slice 5: the starter rod fills the orb with exactly the recipe's 10,000 FE ==
+  block(0,100,20) = powah:energizing_orb
+  block(0,101,20) = powah:energizing_rod_starter
+  info(0,100,20): Energizing Orb at 0,100,20: 0/10000 FE (recipe powah:steel_energized x2, inputs 2, t=856)
+  info(0,101,20): Energizing Rod at 0,101,20: 0/10000 FE (100 FE/t a side, orb 0,100,20, t=861)
+  set(0,101,20) reply: Energy set to 10000 FE.
+  output(0,100,20) = {"count":2,"item":"powah:steel_energized"}
+  rod after: Energizing Rod at 0,101,20: 0/10000 FE (100 FE/t a side, orb 0,100,20, t=980)
+  info(0,100,20): Energizing Orb at 0,100,20: 0/0 FE (no recipe, t=988)
+== slice 5: an orb with no rod in range produces nothing ==
+  info(10,100,20): Energizing Orb at 10,100,20: 0/10000 FE (recipe powah:steel_energized x2, inputs 2, t=1080)
+== slice 5: a rod beside an orb with no recipe keeps its charge ==
+  set(20,101,20) = Energizing Rod at 20,101,20: 5000/20000000 FE (200000 FE/t a side, orb 20,100,20, t=1108)
+  info(20,101,20): Energizing Rod at 20,101,20: 5000/20000000 FE (200000 FE/t a side, orb 20,100,20, t=1174)
+  info(20,100,20): Energizing Orb at 20,100,20: 0/0 FE (no recipe, t=1181)
+== slice 5: a nitro rod makes a blazing crystal at exactly 120,000 FE ==
+  info(0,100,28): Energizing Orb at 0,100,28: 0/120000 FE (recipe powah:crystal_blazing x1, inputs 4, t=1224)
+  set(0,101,28) reply: Energy set to 200000 FE.
+  output(0,100,28) = {"count":1,"item":"powah:crystal_blazing"}
+  info(0,101,28): Energizing Rod at 0,101,28: 80000/20000000 FE (200000 FE/t a side, orb 0,100,28, t=1255)
+  info(0,100,28): Energizing Orb at 0,100,28: 0/0 FE (no recipe, t=1261)
+== slice 5: the jar's second blazing recipe, one blaze rod ==
+  set(0,101,28) reply: Energy set to 200000 FE.
+  output(0,100,28) = {"count":1,"item":"powah:crystal_blazing"}
+  info(0,101,28): Energizing Rod at 0,101,28: 80000/20000000 FE (200000 FE/t a side, orb 0,100,28, t=1305)
+== slice 5: the niotic, spirited and nitro crystals ==
+  info(0,100,28): Energizing Orb at 0,100,28: 0/300000 FE (recipe powah:crystal_niotic x1, inputs 1, t=1324)
+  set(0,101,28) reply: Energy set to 400000 FE.
+  output(0,100,28) = {"count":1,"item":"powah:crystal_niotic"}
+  info(0,101,28): Energizing Rod at 0,101,28: 100000/20000000 FE (200000 FE/t a side, orb 0,100,28, t=1354)
+  set(0,101,28) reply: Energy set to 1000000 FE.
+  output(0,100,28) = {"count":1,"item":"powah:crystal_spirited"}
+  info(0,101,28): Energizing Rod at 0,101,28: 0/20000000 FE (200000 FE/t a side, orb 0,100,28, t=1398)
+  info(0,100,28): Energizing Orb at 0,100,28: 0/20000000 FE (recipe powah:crystal_nitro x16, inputs 4, t=1429)
+  set(0,101,28) reply: Energy set to 20000000 FE.
+  output(0,100,28) = {"count":16,"item":"powah:crystal_nitro"}
+  info(0,101,28): Energizing Rod at 0,101,28: 0/20000000 FE (200000 FE/t a side, orb 0,100,28, t=1554)
+```
+
+The exact numbers are all there: the starter rod gives exactly its 10,000 and stands at 0 (the
+recipe is 10,000), the nitro rod falls 200,000 → 80,000 on a 120,000 recipe (exactly the recipe's
+energy), 400,000 → 100,000 on niotic (300,000), 1,000,000 → 0 on spirited, and 20,000,000 → 0 on
+the nitro recipe, which produced its 16 crystals. Every completion clears the inputs (`0/0 FE (no
+recipe)`), and the two controls are silent where they must be.
+
+Legs (all in `ports/_shared/evidence/powah-e2e/`):
+
+| Leg | Command | Result |
+|---|---|---|
+| main | `build-slot.sh run --step e2e -- bash tools/e2e.sh` | **PASS** + `EXIT:0` (`e2e-launcher.log`) |
+| control (no package) | `GAME=$CONTROL_GAME …` | `FAIL: expected powah:furnator_starter at 0,100,0, got 'minecraft:air'` + `EXIT:1` (`e2e-control.log`) |
+| control (ids), inside the main run | the control leg | `Unknown block type 'powah:energizing_orb'`, `'powah:energizing_rod_nitro'`, `Unknown item 'powah:crystal_blazing'` |
+| selftest (slice 1's flip) | `SELFTEST=1 …` | `FAIL: SELFTEST flipped: the unfuelled furnator made no FE, as it should` + `EXIT:1` (`e2e-selftest.log`) |
+| selftest (this slice's flip) | `SELFTEST=orb …` | `FAIL: expected /powah info to say '200000/20000000 FE', got 'Energizing Rod at 0,101,28: 80000/20000000 FE …'` + `EXIT:1` (`e2e-selftest-orb.log`) |
+| log gate | `check-e2e-logs.py powah-e2e --strict` | `logs=12 ok=12`, exit 0 |
+
+`SELFTEST=orb` is the counterfactual of the exact-fall assertion: a run that claims the rod kept
+its whole charge must fail, and does.
+
+### Deviations slice 5 adds
+
+1. **The `c:` tags become the vanilla member they resolve to.** 26.3 has no NeoForge common
+   tags, so `c:glass_blocks` is `minecraft:glass`, `c:storage_blocks/quartz` is
+   `minecraft:quartz_block`, `c:rods/blaze` is `minecraft:blaze_rod`, and the six energizing
+   recipes accept the vanilla ids (`minecraft:iron_ingot`, `minecraft:gold_ingot`,
+   `minecraft:diamond`, `minecraft:emerald`, `minecraft:nether_star`,
+   `minecraft:redstone_block`, `minecraft:blaze_powder`). A modded iron ingot therefore does not
+   energize; the tags are recorded here so a later slice can declare `powah:` tags and read them.
+2. **The orb's buffer capacity is a declaration, not per-recipe.** The capability is declared once
+   at 20,000,000 (the largest recipe) because a block's buffer is static; the *rule* still uses
+   the matched recipe's energy, and the tick clears anything a foreign insert left in an orb with
+   no recipe (`onSlotChanged`).
+3. **A rod's energy side is every face.** Upstream's `isEnergyPresent` answers only for the face
+   its `facing` state names; a `block_energy` declaration cannot vary by state, so all six faces
+   are open.
+4. **The orb completes on its own tick, one tick after the fill.** Upstream's `fillEnergy`
+   produces inside the rod's call; the port's rod writes the orb's buffer at `level_tick_post` and
+   the orb produces on its next tick (invisible through a poll, but it is one tick of latency).
+5. **An input slot has no stack limit of 1.** `ModContainer` declares slots, not per-slot limits,
+   so four blaze powder in one slot are one filled slot (which matches one ingredient and
+   therefore no recipe) — the same recipe result as upstream's slot limit, reached from the other
+   side.
+6. **`/powah set` on the orb clamps at the matched recipe's energy**, and at 0 with no recipe:
+   upstream's buffer capacity *is* the recipe's energy, so this is the faithful clamp rather than
+   a harness invention.
+7. **No `keepEnergy()`:** breaking an orb or a rod loses its buffer, as slice 1's machines do.
+
+**Upstream defects fixed:** none found — the energizing numbers, the bag match and the warm-up
+ticker are internally consistent. Two *port* hazards were found and closed while measuring: the
+recipe-change reset would have destroyed a fill written in the same tick the inputs arrived
+(hence `orb_step`'s "no recorded recipe adopts the energy"), and a rod's whole-compound write
+would have clobbered a cable's move into it in the same post phase (the rod now writes only the
+keys it changed).
+
+### Pin findings this slice measured (for the next port)
+
+1. **A mod block entity's container is grown by the command path.** `item replace block …
+   container.N` fills slot N and grows the entity's `items`; `ctl container` then reads it back.
+   Seven slots work as declared.
+2. **A rod may fill on the tick its orb's inputs arrive** if its warm-up is already at 20 —
+   anything reading the orb's buffer must treat "energy but no recorded recipe" as the recipe's,
+   not as a mismatch.
+3. **A 20,000,000 FE recipe is 100 fills at a nitro rod's 200,000 a tick**, i.e. ~120 ticks after
+   the warm-up: a poll budget under 150 ticks would time out.
+4. `/powah info`'s orb line carries the recipe **and** the input count, so a harness can assert
+   the match before any energy moves.
+5. **`/powah set` on a machine that feeds something cannot be polled for equality** — the drain
+   starts the same tick. For a rod the command's own reply (`Energy set to 10000 FE.`) is the
+   exact read; `ctl`'s `messages` list is **newest first**, so the newest matching line is the
+   first, not the last (a `tail -1` reads the oldest and cost one run its assertion).
+6. **A `max_stack_size: 1` item cannot fill two crafting cells from one pickup.** Right-clicking
+   with an empty cursor places nothing, and the cells, the rods and the orb all stack to one, so
+   a checker must pick the item up once per cell (measured: the hardened cell's grid had slot 105
+   empty and read as "the recipe does not craft").
+7. **`interact` on a crafting table can silently miss** ("out of reach", "no face … visible"),
+   leaving the player's inventory open; every click then lands in the wrong slots and the result
+   slot reads empty — which looks exactly like a broken recipe. A checker must assert the table's
+   result slot exists before it fills the grid, and retry the interact (this cost the first two
+   runs of this slice 12 and 8 false recipe failures).
+
+Version: **0.2.4 → 0.2.5** (one patch). The published `[[versions]]` record keeps 0.2.4 and gains
+0.2.5 at publish time — this port does not touch the registry entry.
+
+Skills: superpowers/using-superpowers, brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion; BeautifulRust/rust-best-practices
+
 ### Coverage table in the checker's shape (`check-coverage.py`)
 
 | Family | Status | Evidence |
 |---|---|---|
-| `block` | tested | every block placed and read back, from the three slice-1 machines to the seven cell tiers and their loot |
+| `block` | tested | every block placed and read back, from the three slice-1 machines to the seven cell tiers, the energizing orb, the seven rods and the blazing crystal block, and their loot |
 | `item` | tested | every item given and counted; the machines' items placed |
-| `block_entity` | tested | the furnator burns and its buffer fills; a cell holds its tier's capacity; the cable relays across a run (energy only moves through the block entities' ticks) |
-| `loot_table` | tested | every machine and cell block mined in survival in the loot leg and asserted to drop itself |
-| `recipe:minecraft:crafting_shaped` | tested | `craft_check.py` crafts each shaped recipe in a real table: output id + count, ingredients consumed |
-| `recipe:minecraft:crafting_shapeless` | tested | same leg; the paste's lava bucket leaves its bucket |
+| `block_entity` | tested | the furnator burns and its buffer fills; a cell holds its tier's capacity; the cable relays across a run; the orb holds seven slots and a recipe-gated buffer, and a rod fills it exactly (energy only moves through the block entities' ticks) |
+| `loot_table` | tested | every machine, cell, orb, rod and material block mined in survival in the loot leg and asserted to drop itself |
+| `recipe:minecraft:crafting_shaped` | tested | `craft_check.py` crafts each of the 25 shaped recipes in a real table (the five previously blocked cells included): output id + count, ingredients consumed |
+| `recipe:minecraft:crafting_shapeless` | tested | same leg, 8 cases; the paste's lava bucket leaves its bucket, and the material block and its 9-back recipe both work |
+| `tag:item` | tested | `powah:energizing_rods` names the seven rods (the jar's own tag); the e2e gives, places, crafts and mines each of those ids, and `cargo horizon-mod check` validates the tag |
 | `tag:block` | tested | the cable's `powah:energy_cable_connects` is the visual-arms tag (the relay is the mechanic and the three-cable run is asserted); the pickaxe/needs-iron tags are what makes the loot leg's drops real |

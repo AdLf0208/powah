@@ -1,0 +1,65 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_capacitor_basic_tiny": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:capacitor_basic_tiny"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_dielectric_casing": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:dielectric_casing"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_dielectric_rod": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:dielectric_rod"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_quartz": {
+      "conditions": {
+        "items": [
+          {
+            "items": "minecraft:quartz"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "powah:crafting/energizing_rod_starter"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_quartz",
+      "has_dielectric_rod",
+      "has_capacitor_basic_tiny",
+      "has_dielectric_casing"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "powah:crafting/energizing_rod_starter"
+    ]
+  }
+}

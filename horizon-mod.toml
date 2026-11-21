@@ -5,7 +5,7 @@
 # until the maintainer approves publishing (ARCHITECTURE.md §8).
 id = "powah"
 name = "Powah"
-version = "0.2.4"
+version = "0.2.5"
 description = """A port of Powah! (Rearchitected) for Horizon, slice 1: the starter tier of the energy
 chain. The Furnator burns a furnace fuel into carbon and makes 20 FE/t into a 20,000 FE buffer
 (one coal is 48,000 FE); the Energy Cell is a 1,000,000 FE capacitor that takes and gives 1,000
@@ -19,10 +19,14 @@ charge (up to 500 FE/t for the network), so a cell three cables away from anothe
 Slice 4 completes the energy cell ladder: the basic, hardened, blazing, niotic, spirited and nitro
 cells carry their own capacity (4M/10M/40M/100M/400M/2G FE) and per-side transfer (4,000 up to
 2,000,000 FE/t); `/powah set` clamps a cell at its tier's capacity.
+Slice 5 carries the Energizing Orb: seven slots whose inputs match one of six energizing recipes,
+a buffer filled by the energizing rods (seven tiers, 10,000 up to 20,000,000 FE, within four
+blocks), and the materials it makes — energized steel and the blazing, niotic, spirited and nitro
+crystals — so the five higher cell tiers, the large capacitor and the higher capacitor and rod
+tiers now craft.
 Not yet ported: the other six
-furnator and cable tiers, the creative cell, the generators, reactors and the Energizing Orb, item
-charging, side config, redstone modes and the GUIs. The five higher cell recipes need the
-Energizing Orb's steel/crystals, so only the basic cell's recipe is carried."""
+furnator and cable tiers, the creative cell, the generators, reactors, item
+charging, side config, redstone modes and the GUIs."""
 authors = ["owmii", "Technici4n", "AdLf0208"]
 # A native mod: Rust in src/, compiled by the launcher against the game build [native] pins,
 # beside the carried assets/ and data/. The id is the resource namespace and the only identity.

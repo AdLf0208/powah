@@ -1,4 +1,4 @@
-# Powah for Horizon — slices 1–3
+# Powah for Horizon — slices 1–5
 
 A clean-room Rust rewrite of **Powah! (Rearchitected) 6.2.10** (`Technici4n/Powah`,
 **LGPL-3.0-only**) for Horizon 26.3, as one flat SDK package (`api = "0.2"`): the
@@ -21,6 +21,19 @@ one relay (upstream's `CableNet`), so a charge crosses a run of three cables int
 cell at the far end (0.2.2 moved nothing across more than one hop). The network
 carries 500 FE/t — one cable's rate for the whole run — and creates or loses no FE
 across it.
+
+Slice 4 is the **energy cell ladder**: the basic, hardened, blazing, niotic, spirited
+and nitro cells, each with its own capacity (4M/10M/40M/100M/400M/2G FE) and per-side
+transfer (4,000 up to 2,000,000 FE/t), so `/powah set` clamps at the tier's own number.
+
+Slice 5 is the **Energizing Orb**, its **seven rods** and the **materials** they make:
+an orb's seven slots (0 result, 1–6 inputs) match one of six energizing recipes — iron
+and gold into energized steel at 10,000 FE, four blaze powder (or one blaze rod) into a
+blazing crystal at 120,000, a diamond at 300,000, an emerald at 1,000,000 and the
+nether-star recipe at 20,000,000 into sixteen nitro crystals — and a rod within four
+blocks fills the orb's buffer at up to its tier's transfer (100 up to 200,000 FE/t),
+losing exactly what the orb took. That is what makes the five higher cell tiers, the
+large capacitor and the higher capacitor and rod tiers craftable.
 
 All three declare a real `Capabilities.Energy.BLOCK` buffer (the amount is the int
 `energy` in the block entity's saved compound), so other machines can fill and

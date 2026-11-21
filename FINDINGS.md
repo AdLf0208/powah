@@ -120,6 +120,62 @@ All three are in `#minecraft:mineable/pickaxe` + `#minecraft:needs_iron_tool`
 Crafting recipes use `powah:capacitor_basic_tiny`, `powah:dielectric_casing`,
 `powah:dielectric_paste` (later slices).
 
+## Slice 5 — the Energizing Orb, the rods and the materials (read 2026-11-21)
+
+Same clone, tag `v6.2.10` (commit `a5a8f25`). Files read:
+
+| Area | Files |
+|---|---|
+| orb | `block/energizing/EnergizingOrbTile.java`, `EnergizingOrbBlock.java`, `EnergizingRecipe.java` |
+| rods | `block/energizing/EnergizingRodTile.java`, `EnergizingRodBlock.java` |
+| numbers | `config/v2/DefaultEnergies.java`, `config/v2/PowahConfig.java` (`energizing_range`, `energizing_rods`) |
+| recipes | the jar's `data/powah/recipe/energizing/*.json` (six files in five materials) |
+| blocks | `block/Blcks.java` (the orb, the rod tiers, the material blocks) |
+
+**Orb (`EnergizingOrbTile`).** Seven slots (`inv.set(7)`), slot 0 the result and
+1–6 the inputs, slot limit 1 on an input; `canInsert` only into an empty input
+slot while slot 0 is empty, `canExtract` only slot 0. Any slot change
+(`onSlotChanged`) zeroes the buffer and re-runs `checkRecipe`: the recipe manager
+looks up a `powah:energizing` recipe for the six input slots, and the buffer's
+capacity **and** transfer become that recipe's `getScaledEnergy()` (the JSON's
+`energy`, × `general.energizing_energy_ratio`, default 1.0). `fillEnergy(amount)`
+fills `min(empty, amount)` and, when full, clears the inventory, writes the
+result into slot 0 and zeroes the buffer again. `EnergizingRecipe.matches` is a
+bag match: each filled slot takes one ingredient in any order, and every
+ingredient must be used — with a slot limit of 1, four blaze powder are four
+slots, not one stack of four. Comparator output is the count of non-empty stacks.
+
+**Rod (`EnergizingRodTile`).** An `AbstractEnergyStorage` on
+`devices.energizing_rods`: capacity `energizingCapacity` = `baseScaling × 10,000`,
+transfer `energizingTransfer` = `baseScaling × 100` (starter 10,000 FE / 100 FE/t,
+nitro 20,000,000 / 200,000). A `Ticker(20)` is the warm-up: while the linked orb
+`containRecipe()`s *and* the rod holds energy the counter walks up (and the ticker
+**stays** at 20 — `ended()` is `ticks >= max`), so after 20 ticks the rod fills
+`min(stored, transfer)` **every tick**, not once per 20. With no recipe or no
+energy it walks back down. The fill is `this.energy.consume(orb.fillEnergy(fill))`:
+the rod loses exactly what the orb took. The link is a saved `OrbPos`, set on
+placement by scanning `energizing_range` (default 4, Chebyshev) for an orb, and
+cleared by the orb's `onRemove`. Energy reaches a rod only on the face its
+`facing` state names (`isEnergyPresent`).
+
+**Blocks.** The orb and the rods are `Properties.metalNoSolid(2.0, 20.0)` (metal
+sound, correct tool, no occlusion) with `facing` = all six directions, default
+down; the material blocks are `Properties.metal(2.0, 20.0)` and stack to 64. The
+rod's and the orb's items stack to 1.
+
+**Recipes (jar).** steel 10,000 → 2 energized steel (`c:ingots/iron` +
+`c:ingots/gold`); blazing 120,000 → 1 crystal, from four blaze powder *or* one
+`c:rods/blaze`; niotic 300,000 (a diamond); spirited 1,000,000 (an emerald);
+nitro 20,000,000 → 16 crystals (a nether star, two `c:storage_blocks/redstone`
+and a blazing crystal block). The cell, capacitor and rod recipes the port now
+carries all depend on these ids; the `c:` tags have no 26.3 equivalent, so each
+is carried as the vanilla member it resolves to (see `notes.md`, slice 5).
+
+**Gaps recorded, not claimed:** the orb's GUI/particles and its `keepEnergy`
+behaviour on break, the rod's `keepEnergy` (the block item carries its buffer),
+the wrench link, the side-config gate on a rod's energy face, and the client
+renderers (`EnergizingOrbRenderer`, `EnergizingRodRenderer`).
+
 ## Slice 1 boundary
 
 Implemented: the starter **Furnator** (fuel → FE), the starter **Energy Cell**

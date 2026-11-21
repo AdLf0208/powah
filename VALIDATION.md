@@ -1,5 +1,14 @@
-# Validation — Powah slices 1 to 4
+# Validation — Powah slices 1 to 5
 
+> **0.2.5 (slice 5, the Energizing Orb, its seven rods and the materials they make)** is recorded in
+> [`notes.md`](notes.md#slice-5--the-energizing-orb-the-rod-ladder-and-the-materials-2026-11-21):
+> the slice and its gap line (slice 4's five `blocked(energizing-orb)` cells), the red proof
+> (seven `todo!()` tests, 34 passed / 7 failed, plus a second red for the orb's own rule at
+> 39 passed / 3 failed), the ladder at pin `0a875da` (42 tests, clippy 0 warnings, `fmt --check`
+> clean, two byte-identical builds of 210,786 B, `check`, `fits` against the pin **and** against
+> `0b14f8a`, gate 1/1 with **292 entries**) and the in-game legs (main `PASS`+`EXIT:0`, control /
+> `SELFTEST=1` / `SELFTEST=orb` at `EXIT:1`, `check-e2e-logs --strict` 12/12). Package:
+> `powah.hmod`, 210,853 B, sha256 `7aef65e337192bb0caff50946ceb889e5f40bfcc10892654e766d46d78e697c3`.
 > **0.2.4 (slice 4, the energy cell ladder)** is recorded in
 > [`notes.md`](notes.md#slice-4--the-energy-cell-ladder-2026-11-21): the slice and its gap line, the red
 > proof (three `todo!()` tests, 28 passed / 3 failed, plus the 0.2.3 package failing at the first new

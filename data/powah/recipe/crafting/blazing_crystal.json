@@ -1,0 +1,11 @@
+{
+  "category": "misc",
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "powah:blazing_crystal_block"
+  ],
+  "result": {
+    "count": 9,
+    "id": "powah:crystal_blazing"
+  }
+}

@@ -17,14 +17,33 @@ use std::sync::{Arc, Mutex};
 use mod_api::{
     self, BlockEntityPart, BlockEntityTickEvent, BlockEntityTickReply, BlockEntityTicksEvent,
     BlockEntityTypeKey, BlockPart, Command, CommandArgumentValue, Compound, Direction, ENERGY,
-    Host, HostTransaction, LevelRef, ModContainer, ModEnergyBuffer, Registrar, ServerHost, Tag,
-    move_energy,
+    Host, HostTransaction, Identifier, LevelRef, ModContainer, ModEnergyBuffer, Registrar,
+    ServerHost, Tag, move_energy,
 };
 
 use crate::runtime::{
-    CABLE_TRANSFER, CELL_TIER_COUNT, CellTier, FURNATOR_CAPACITY, FURNATOR_TRANSFER, Furnator,
-    Neighbour, cell_tier, clamp_energy, comparator_strength, network_moves, push_amount,
+    CABLE_TRANSFER, CELL_TIER_COUNT, CellTier, EnergizingRecipe, FURNATOR_CAPACITY,
+    FURNATOR_TRANSFER, Furnator, Neighbour, ORB_MAX_ENERGY, ORB_OUTPUT_SLOT, ORB_SLOTS,
+    ROD_TIER_COUNT, RodTier, cell_tier, clamp_energy, comparator_strength, network_moves,
+    push_amount, rod_tier,
 };
+
+/// The energizing orb block and its item.
+pub(crate) const ORB: &str = "powah:energizing_orb";
+/// The orb's block entity type path, in this mod's namespace.
+pub(crate) const ORB_TYPE: &str = "energizing_orb";
+
+/// Every energizing rod tier's block id and block entity type name, in the
+/// ladder's order (the index [`rod_tier`] takes).
+pub(crate) const RODS: [(&str, &str); ROD_TIER_COUNT] = [
+    ("powah:energizing_rod_starter", "energizing_rod_starter"),
+    ("powah:energizing_rod_basic", "energizing_rod_basic"),
+    ("powah:energizing_rod_hardened", "energizing_rod_hardened"),
+    ("powah:energizing_rod_blazing", "energizing_rod_blazing"),
+    ("powah:energizing_rod_niotic", "energizing_rod_niotic"),
+    ("powah:energizing_rod_spirited", "energizing_rod_spirited"),
+    ("powah:energizing_rod_nitro", "energizing_rod_nitro"),
+];
 
 /// The furnator block and its item.
 pub(crate) const FURNATOR: &str = "powah:furnator_starter";
@@ -59,6 +78,12 @@ const SLOT_COUNT: usize = 1;
 /// Upstream's saved keys (`saveAdditional`).
 const KEY_ENERGY: &str = "energy";
 const KEY_CARBON: &str = "carbon";
+/// The orb's matched recipe (its output id) and the rod's linked orb position.
+const KEY_RECIPE: &str = "recipe";
+const KEY_ORB: &str = "orb";
+/// A rod's warm-up counter (`Ticker(20)`), kept across a reload so a reloaded rod
+/// does not restart its 20 ticks.
+const KEY_COOLDOWN: &str = "cool_down";
 
 /// The three machines, as a readout has to tell them apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,6 +92,10 @@ pub(crate) enum Kind {
     /// An energy cell, carrying its tier's capacity and transfer.
     Cell(CellTier),
     Cable,
+    /// The energizing orb: a recipe-gated buffer over seven slots.
+    Orb,
+    /// An energizing rod, carrying its tier's capacity and transfer.
+    Rod(RodTier),
 }
 
 impl Kind {
@@ -75,7 +104,10 @@ impl Kind {
         match block {
             FURNATOR => Some(Kind::Furnator),
             CABLE => Some(Kind::Cable),
-            _ => cell_of(block).map(Kind::Cell),
+            ORB => Some(Kind::Orb),
+            _ => cell_of(block)
+                .map(Kind::Cell)
+                .or_else(|| rod_of(block).map(Kind::Rod)),
         }
     }
 }
@@ -146,6 +178,8 @@ pub(crate) fn battery_of(block: &str) -> Option<ModEnergyBuffer> {
     match Kind::of(block) {
         Some(Kind::Furnator) => Some(furnator_battery()),
         Some(Kind::Cell(tier)) => Some(cell_battery(tier)),
+        Some(Kind::Orb) => Some(orb_battery()),
+        Some(Kind::Rod(tier)) => Some(rod_battery(tier)),
         _ => None,
     }
 }
@@ -174,6 +208,252 @@ fn int(saved: &Tag, key: &str) -> i32 {
         Some(Tag::Int(value)) => *value,
         _ => 0,
     }
+}
+
+/// The bookmark this mod writes for "no recipe". Empty rather than absent because
+/// a [`Compound`]'s keys are Java strings this module cannot name, so a removal
+/// would need one.
+const NO_RECIPE: &str = "";
+
+/// A saved string, `None` when absent, of another type or the empty marker.
+fn string(saved: &Tag, key: &str) -> Option<String> {
+    match saved.get(key) {
+        Some(Tag::String(value)) => {
+            let value = value.to_string_lossy();
+            (!value.is_empty()).then_some(value)
+        }
+        _ => None,
+    }
+}
+
+/// A saved position (an int array of three), `None` when absent or malformed.
+fn read_pos(saved: &Tag, key: &str) -> Option<[i32; 3]> {
+    match saved.get(key) {
+        Some(Tag::IntArray(pos)) if pos.len() == 3 => Some([pos[0], pos[1], pos[2]]),
+        _ => None,
+    }
+}
+
+/// Write an int under `key`.
+fn write_int(saved: &mut Tag, key: &str, value: i32) {
+    if let Tag::Compound(nbt) = saved {
+        nbt.insert(key.into(), Tag::Int(value));
+    }
+}
+
+/// Write a string under `key`.
+fn write_string(saved: &mut Tag, key: &str, value: &str) {
+    if let Tag::Compound(nbt) = saved {
+        nbt.insert(key.into(), Tag::String(value.into()));
+    }
+}
+
+/// The orb's state as its tick and `/powah info` read it.
+pub(crate) struct OrbState {
+    pub energy: i32,
+    /// The input slots' item ids, in slot order.
+    pub inputs: Vec<String>,
+    pub recipe: Option<&'static EnergizingRecipe>,
+}
+
+/// The filled input slots of `items` (slot 0 is the result, 1..6 the inputs).
+fn input_ids(host: &dyn Host, items: &[Option<mod_api::ItemStack>]) -> Vec<String> {
+    items
+        .iter()
+        .skip(1)
+        .flatten()
+        .map(|stack| stack.item().id(host))
+        .collect()
+}
+
+/// A loaded orb's state: its buffer and the recipe its six input slots match.
+pub(crate) fn read_orb(
+    host: &mut dyn ServerHost,
+    level: LevelRef,
+    pos: [i32; 3],
+) -> Option<OrbState> {
+    let entity = host.block_entity(level, pos)?;
+    let saved = Tag::Compound(entity.data(&*host)?);
+    let mut inputs = Vec::new();
+    for slot in 1..ORB_SLOTS as u32 {
+        // A slot the entity does not have yet (this pin grows a mod entity's
+        // `items` with its container, but a freshly placed orb answers before its
+        // first tick) reads as empty rather than as a missing orb.
+        if let Ok(Some(stack)) = entity.item_slot(&*host, slot) {
+            inputs.push(stack.item().id(&*host));
+        }
+    }
+    let recipe = {
+        let ids: Vec<&str> = inputs.iter().map(String::as_str).collect();
+        crate::runtime::energize(&ids)
+    };
+    Some(OrbState {
+        energy: int(&saved, KEY_ENERGY),
+        inputs,
+        recipe,
+    })
+}
+
+/// The orb's tick (`EnergizingOrbTile`): record the recipe its inputs match, keep
+/// the buffer the rods fill, and produce when it reaches the recipe's energy. The
+/// payload is left `Changed` only when something was written, so a waiting orb
+/// does not dirty its chunk every tick and a rod's fill survives it.
+fn orb_tick(host: &mut dyn ServerHost, event: &mut BlockEntityTickEvent<'_>) -> bool {
+    let resized = event.entity.items.len() != ORB_SLOTS;
+    if resized {
+        event.entity.items.resize(ORB_SLOTS, None);
+    }
+    let mut saved = Tag::Compound(std::mem::take(&mut event.entity.nbt));
+    let energy = int(&saved, KEY_ENERGY);
+    let recorded = string(&saved, KEY_RECIPE);
+    let inputs = input_ids(&*host, &event.entity.items);
+    let ids: Vec<&str> = inputs.iter().map(String::as_str).collect();
+    let step = crate::runtime::orb_step(&ids, energy, recorded.as_deref());
+    let mut changed = resized;
+
+    match step.recipe {
+        Some(recipe) if step.done => {
+            // Upstream's `inv.clear()` then slot 0: the inputs become the result.
+            let output = host
+                .item_key(&Identifier::parse(recipe.output).expect("a registry id"))
+                .and_then(|item| mod_api::ItemStack::new(item, recipe.count.unsigned_abs()));
+            event.entity.items.fill(None);
+            event.entity.items[ORB_OUTPUT_SLOT] = output;
+            write_string(&mut saved, KEY_RECIPE, NO_RECIPE);
+            changed = true;
+        }
+        Some(recipe) => {
+            if recorded.as_deref() != Some(recipe.output) {
+                write_string(&mut saved, KEY_RECIPE, recipe.output);
+                changed = true;
+            }
+        }
+        None => {
+            if recorded.is_some() {
+                write_string(&mut saved, KEY_RECIPE, NO_RECIPE);
+                changed = true;
+            }
+        }
+    }
+    if step.energy != energy {
+        write_int(&mut saved, KEY_ENERGY, step.energy);
+        changed = true;
+    }
+    if let Tag::Compound(nbt) = saved {
+        event.entity.nbt = nbt;
+    }
+    changed
+}
+
+/// One rod tick's move into its orb (`EnergizingRodTile.postTick`): find the orb,
+/// warm up for 20 ticks while the orb has a recipe, then move
+/// `min(stored, transfer)` into the orb's remaining room and take exactly what
+/// the orb accepted. Answers whether anything was written.
+fn rod_tick(host: &mut dyn ServerHost, level: LevelRef, pos: [i32; 3], tier: RodTier) -> bool {
+    let Some(rod) = host.block_entity(level, pos) else {
+        return false;
+    };
+    let Some(saved) = rod.data(&*host) else {
+        return false;
+    };
+    let saved = Tag::Compound(saved);
+    let mut patch = Compound::new();
+
+    // The link: upstream sets it on placement and clears it when the orb goes, so
+    // a missing, broken or out-of-range orb is searched for again here.
+    let recorded = read_pos(&saved, KEY_ORB);
+    let linked = recorded.filter(|orb| {
+        in_range(pos, *orb)
+            && block_at(&*host, level, *orb).as_deref().and_then(Kind::of) == Some(Kind::Orb)
+    });
+    let orb_pos = linked.or_else(|| find_orb(host, level, pos));
+    if orb_pos != recorded {
+        patch.insert(
+            KEY_ORB.into(),
+            Tag::IntArray(orb_pos.unwrap_or([0, 0, 0]).to_vec()),
+        );
+    }
+
+    // A rod only gives to an orb that holds a recipe (`containRecipe`), and that
+    // is what warms its 20-tick counter up; without one the counter cools.
+    let awaiting = orb_pos.and_then(|orb| {
+        let state = read_orb(host, level, orb)?;
+        Some((orb, state.recipe?))
+    });
+    let cooldown = crate::runtime::rod_cooldown(awaiting.is_some(), int(&saved, KEY_COOLDOWN));
+    if int(&saved, KEY_COOLDOWN) != cooldown {
+        patch.insert(KEY_COOLDOWN.into(), Tag::Int(cooldown));
+    }
+
+    let mut applied = false;
+    if let Some((orb, recipe)) = awaiting
+        && cooldown >= crate::runtime::ROD_WARMUP
+    {
+        // Both sides are read again here, after every earlier move of this phase
+        // has run, so a cable or a cell that touched either one is not undone.
+        let rod_energy = rod
+            .data(&*host)
+            .map_or(0, |nbt| int(&Tag::Compound(nbt), KEY_ENERGY));
+        let Some(orb_entity) = host.block_entity(level, orb) else {
+            return false;
+        };
+        let Some(orb_saved) = orb_entity.data(&*host) else {
+            return false;
+        };
+        let orb_energy = int(&Tag::Compound(orb_saved), KEY_ENERGY);
+        let amount = crate::runtime::orb_fill(rod_energy, tier.transfer, orb_energy, recipe.energy);
+        if amount > 0 {
+            let mut rod_patch = Compound::new();
+            rod_patch.insert(KEY_ENERGY.into(), Tag::Int(rod_energy - amount));
+            let mut orb_patch = Compound::new();
+            orb_patch.insert(KEY_ENERGY.into(), Tag::Int(orb_energy + amount));
+            applied = host
+                .transaction(|host, _tx| -> Result<bool, ()> {
+                    rod.merge_data(host, rod_patch.clone()).map_err(|_| ())?;
+                    orb_entity
+                        .merge_data(host, orb_patch.clone())
+                        .map_err(|_| ())?;
+                    Ok(true)
+                })
+                .unwrap_or(false);
+        }
+    }
+
+    if !patch.is_empty() {
+        let _ = rod.merge_data(host, patch);
+        return true;
+    }
+    applied
+}
+
+/// The nearest orb within `energizing_range` of `pos`, in `BlockPos.betweenClosed`
+/// order (the order upstream's scan takes and keeps the first of).
+fn find_orb(host: &mut dyn ServerHost, level: LevelRef, pos: [i32; 3]) -> Option<[i32; 3]> {
+    for y in -crate::runtime::ENERGIZING_RANGE..=crate::runtime::ENERGIZING_RANGE {
+        for x in -crate::runtime::ENERGIZING_RANGE..=crate::runtime::ENERGIZING_RANGE {
+            for z in -crate::runtime::ENERGIZING_RANGE..=crate::runtime::ENERGIZING_RANGE {
+                let candidate = [pos[0] + x, pos[1] + y, pos[2] + z];
+                if candidate == pos || candidate == [0, 0, 0] {
+                    continue;
+                }
+                if block_at(&*host, level, candidate)
+                    .as_deref()
+                    .and_then(Kind::of)
+                    == Some(Kind::Orb)
+                {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Whether `orb` stands within `energizing_range` of `rod` (Chebyshev, as
+/// `BlockPos.betweenClosed` boxes it).
+fn in_range(rod: [i32; 3], orb: [i32; 3]) -> bool {
+    let range = crate::runtime::ENERGIZING_RANGE;
+    (0..3).all(|axis| (rod[axis] - orb[axis]).abs() <= range)
 }
 
 /// One machine's readout line, exactly as 0.1.0 printed it (the line the
@@ -209,7 +489,99 @@ pub(crate) fn status_line(
         Kind::Cable => format!(
             "Energy Cable at {x},{y},{z}: no storage, moves up to {CABLE_TRANSFER} FE/t (t={time})"
         ),
+        // The orb and a rod have readouts of their own ([`orb_line`], [`rod_line`]);
+        // [`info_line`] gives them those, so these arms are only the type's
+        // exhaustiveness.
+        Kind::Orb => orb_line(pos, energy, None, 0, time),
+        Kind::Rod(tier) => rod_line(pos, energy, tier, None, time),
     }
+}
+
+/// The energizing rod tier a block id names, with its numbers; `None` for any
+/// other block. The ids are the content's own
+/// (`data/powah/horizon/block/energizing_rod_*`).
+pub(crate) fn rod_of(block: &str) -> Option<RodTier> {
+    let index = RODS.iter().position(|(id, _)| *id == block)?;
+    rod_tier(index)
+}
+
+/// The orb's container: seven slots, slot 0 the result and 1..6 the inputs
+/// (`this.inv.set(7)`, slot limit 1 on the inputs). Automation may fill any
+/// input slot and take from the result slot, as upstream's `IInventoryHolder`
+/// allows; there is no menu (no GUI in this port).
+pub(crate) fn orb_container() -> ModContainer {
+    ModContainer {
+        slots: ORB_SLOTS,
+        faces: std::array::from_fn(|_| (0..ORB_SLOTS).collect()),
+        inputs: (1..ORB_SLOTS).collect(),
+        outputs: vec![ORB_OUTPUT_SLOT],
+        menu: None,
+    }
+}
+
+/// The orb's buffer: it takes FE and gives none (`fillEnergy`), up to the largest
+/// energizing recipe.
+pub(crate) fn orb_battery() -> ModEnergyBuffer {
+    ModEnergyBuffer {
+        capacity: ORB_MAX_ENERGY,
+        max_insert: ORB_MAX_ENERGY,
+        max_extract: 0,
+        insert_faces: [true; 6],
+        extract_faces: [false; 6],
+    }
+}
+
+/// A rod's buffer (`AbstractEnergyStorage`): its tier's capacity, taking and
+/// giving its tier's transfer a side. Upstream lets a rod reach FE only on the
+/// face its `facing` state names; a declaration cannot vary by state, so every
+/// face is open (recorded as a deviation in `notes.md`).
+pub(crate) fn rod_battery(tier: RodTier) -> ModEnergyBuffer {
+    ModEnergyBuffer {
+        capacity: tier.capacity,
+        max_insert: tier.transfer,
+        max_extract: tier.transfer,
+        insert_faces: [true; 6],
+        extract_faces: [true; 6],
+    }
+}
+
+/// The orb's readout: its buffer, the recipe its inputs match (or none) and how
+/// many input slots are filled.
+pub(crate) fn orb_line(
+    pos: [i32; 3],
+    energy: i32,
+    recipe: Option<&'static EnergizingRecipe>,
+    inputs: usize,
+    time: i64,
+) -> String {
+    let [x, y, z] = pos;
+    match recipe {
+        Some(recipe) => format!(
+            "Energizing Orb at {x},{y},{z}: {energy}/{} FE (recipe {} x{}, inputs {inputs}, \
+             t={time})",
+            recipe.energy, recipe.output, recipe.count
+        ),
+        None => format!("Energizing Orb at {x},{y},{z}: 0/0 FE (no recipe, t={time})"),
+    }
+}
+
+/// A rod's readout: its buffer, its tier's transfer and the orb it is linked to.
+pub(crate) fn rod_line(
+    pos: [i32; 3],
+    energy: i32,
+    tier: RodTier,
+    orb: Option<[i32; 3]>,
+    time: i64,
+) -> String {
+    let [x, y, z] = pos;
+    let orb = match orb {
+        Some([ox, oy, oz]) => format!("orb {ox},{oy},{oz}"),
+        None => "no orb".to_owned(),
+    };
+    format!(
+        "Energizing Rod at {x},{y},{z}: {energy}/{} FE ({} FE/t a side, {orb}, t={time})",
+        tier.capacity, tier.transfer
+    )
 }
 
 /// The machines whose block entity ticked this tick, per level, drained at the
@@ -285,14 +657,37 @@ pub(crate) fn info_line(host: &mut dyn ServerHost, pos: [i32; 3]) -> Option<Stri
             )
         }
         Kind::Cable => (0, 0, None),
+        Kind::Orb => {
+            let orb = read_orb(host, level, pos)?;
+            return Some(orb_line(
+                pos,
+                clamp_energy(orb.energy, orb.recipe.map_or(0, |recipe| recipe.energy)),
+                orb.recipe,
+                orb.inputs.len(),
+                time,
+            ));
+        }
+        Kind::Rod(tier) => {
+            let entity = host.block_entity(level, pos)?;
+            let saved = Tag::Compound(entity.data(&*host)?);
+            let orb = read_pos(&saved, KEY_ORB);
+            return Some(rod_line(
+                pos,
+                clamp_energy(int(&saved, KEY_ENERGY), tier.capacity),
+                tier,
+                orb,
+                time,
+            ));
+        }
     };
     let fuel = fuel.as_ref().map(|(item, count)| (item.as_str(), *count));
     Some(status_line(kind, pos, energy, carbon, fuel, time))
 }
 
-/// Set a furnator's or a cell's stored FE (`/powah set`): the harness control the
-/// in-game check uses. Writing an `energy` key into a foreign block's compound
-/// would be a foreign key in someone else's data, so only this mod's blocks take it.
+/// Set a furnator's, a cell's, the orb's or a rod's stored FE (`/powah set`): the
+/// harness control the in-game check uses. Writing an `energy` key into a foreign
+/// block's compound would be a foreign key in someone else's data, so only this
+/// mod's blocks take it.
 pub(crate) fn set_energy(host: &mut dyn ServerHost, pos: [i32; 3], amount: i32) -> SetOutcome {
     let Some(level) = level_now(host) else {
         return SetOutcome::NoBlock;
@@ -303,6 +698,12 @@ pub(crate) fn set_energy(host: &mut dyn ServerHost, pos: [i32; 3], amount: i32) 
     let capacity = match Kind::of(&block) {
         Some(Kind::Furnator) => FURNATOR_CAPACITY,
         Some(Kind::Cell(tier)) => tier.capacity,
+        Some(Kind::Rod(tier)) => tier.capacity,
+        // The orb's buffer is the recipe's own energy: with no recipe it stores
+        // nothing, exactly as upstream's `onSlotChanged` leaves it.
+        Some(Kind::Orb) => read_orb(host, level, pos)
+            .and_then(|orb| orb.recipe)
+            .map_or(0, |recipe| recipe.energy),
         Some(Kind::Cable) => return SetOutcome::Cable,
         None => return SetOutcome::NoBlock,
     };
@@ -370,7 +771,9 @@ impl FurnatorPart {
 }
 
 /// The cell and the cable: a block entity that stores nothing of its own and only
-/// queues itself for the level tick's end, where the moves run.
+/// queues itself for the level tick's end, where the moves run. An energizing rod
+/// is the same shape: it queues itself, and its move into the orb is one of the
+/// level tick's jobs.
 pub(crate) struct IdlePart {
     queue: Arc<Mutex<Queue>>,
 }
@@ -400,6 +803,28 @@ impl BlockEntityPart for IdlePart {
                 .push(level, event.pos);
         }
         *event.reply = BlockEntityTickReply::Unchanged;
+    }
+}
+
+/// The orb: a block entity with the seven slots and the recipe-gated buffer, which
+/// ticks to fill itself and to turn a full buffer into its result.
+pub(crate) struct OrbPart;
+
+#[mod_api::horizon_part]
+impl BlockPart for OrbPart {}
+
+#[mod_api::horizon_part]
+impl BlockEntityPart for OrbPart {
+    fn block_entity_ticks(&self, _host: &dyn Host, event: &mut BlockEntityTicksEvent<'_>) {
+        event.ticks = true;
+    }
+
+    /// One server tick: the recipe the inputs match, the buffer's value and the
+    /// result, as `EnergizingOrbTile` decides them.
+    fn block_entity_tick(&self, host: &mut dyn ServerHost, event: &mut BlockEntityTickEvent<'_>) {
+        if !orb_tick(host, event) {
+            *event.reply = BlockEntityTickReply::Unchanged;
+        }
     }
 }
 
@@ -488,6 +913,12 @@ pub(crate) fn on_level_tick_post(
         match kind {
             Kind::Furnator => push_out(host, level, pos, FURNATOR_TRANSFER),
             Kind::Cell(tier) => push_out(host, level, pos, tier.transfer),
+            // A rod gives to its orb in the same phase; the orb itself moves
+            // nothing (it has no neighbours to give to).
+            Kind::Rod(tier) => {
+                rod_tick(host, level, pos, tier);
+            }
+            Kind::Orb => {}
             Kind::Cable => {
                 if planned.contains(&pos) {
                     continue;
@@ -849,6 +1280,105 @@ mod tests {
             "the buffer is the int `energy` the energy capability reads"
         );
         assert_eq!(saved.get(KEY_CARBON), Some(&Tag::Int(46_800)));
+    }
+
+    #[test]
+    fn every_energizing_rod_tier_is_one_of_the_ladder_with_its_own_buffer() {
+        let expected = [
+            ("powah:energizing_rod_starter", 10_000, 100),
+            ("powah:energizing_rod_basic", 40_000, 400),
+            ("powah:energizing_rod_hardened", 100_000, 1_000),
+            ("powah:energizing_rod_blazing", 400_000, 4_000),
+            ("powah:energizing_rod_niotic", 1_000_000, 10_000),
+            ("powah:energizing_rod_spirited", 4_000_000, 40_000),
+            ("powah:energizing_rod_nitro", 20_000_000, 200_000),
+        ];
+        for (index, (id, capacity, transfer)) in expected.into_iter().enumerate() {
+            let tier = rod_of(id).unwrap_or_else(|| panic!("{id} is an energizing rod"));
+            assert_eq!(
+                (tier.capacity, tier.transfer),
+                (capacity, transfer),
+                "{id} is the ladder's tier {index}"
+            );
+            assert_eq!(
+                tier,
+                rod_tier(index).expect("the same tier in the rule's table")
+            );
+            let buffer = battery_of(id).unwrap_or_else(|| panic!("{id} declares a buffer"));
+            assert_eq!(buffer.capacity, capacity, "{id}'s capacity");
+            assert_eq!(buffer.max_insert, transfer, "{id}'s insert cap");
+            assert_eq!(buffer.max_extract, transfer, "{id}'s extract cap");
+            assert_eq!(
+                buffer.insert_faces, [true; 6],
+                "{id} takes FE on every face"
+            );
+            assert_eq!(
+                buffer.extract_faces, [true; 6],
+                "{id} gives FE on every face"
+            );
+        }
+        assert_eq!(rod_of(ORB), None, "an orb is not a rod");
+        assert_eq!(rod_of("powah:energy_cell_starter"), None);
+    }
+
+    #[test]
+    fn the_orb_declares_a_seven_slot_container_and_a_take_only_buffer() {
+        let container = orb_container();
+        assert_eq!(container.slots, ORB_SLOTS, "slot 0 plus six inputs");
+        assert_eq!(
+            container.inputs,
+            (1..ORB_SLOTS).collect::<Vec<_>>(),
+            "automation fills the six input slots"
+        );
+        assert_eq!(
+            container.outputs,
+            vec![ORB_OUTPUT_SLOT],
+            "automation takes the result slot"
+        );
+        assert_eq!(
+            container.faces,
+            std::array::from_fn(|_| (0..ORB_SLOTS).collect::<Vec<_>>()),
+            "every face reaches all seven slots"
+        );
+        assert_eq!(container.menu, None, "this port has no GUI");
+
+        let buffer = orb_battery();
+        assert_eq!(buffer.capacity, ORB_MAX_ENERGY);
+        assert_eq!(
+            buffer.max_insert, ORB_MAX_ENERGY,
+            "upstream's transfer is its capacity"
+        );
+        assert_eq!(buffer.max_extract, 0, "the orb never gives FE back");
+        assert_eq!(buffer.insert_faces, [true; 6]);
+        assert_eq!(buffer.extract_faces, [false; 6]);
+        assert_eq!(battery_of(ORB), Some(buffer));
+    }
+
+    #[test]
+    fn the_orb_and_the_rod_print_the_lines_the_e2e_asserts() {
+        let steel = crate::runtime::energizing()
+            .iter()
+            .find(|recipe| recipe.output == "powah:steel_energized")
+            .expect("the steel recipe");
+        assert_eq!(
+            orb_line([0, 100, 20], 0, Some(steel), 2, 120),
+            "Energizing Orb at 0,100,20: 0/10000 FE (recipe powah:steel_energized x2, inputs 2, \
+             t=120)"
+        );
+        assert_eq!(
+            orb_line([0, 100, 20], 0, None, 0, 40),
+            "Energizing Orb at 0,100,20: 0/0 FE (no recipe, t=40)"
+        );
+        let starter = rod_tier(0).expect("the starter rod");
+        assert_eq!(
+            rod_line([0, 101, 20], 10_000, starter, Some([0, 100, 20]), 120),
+            "Energizing Rod at 0,101,20: 10000/10000 FE (100 FE/t a side, orb 0,100,20, t=120)"
+        );
+        let nitro = rod_tier(6).expect("the nitro rod");
+        assert_eq!(
+            rod_line([0, 101, 20], 0, nitro, None, 40),
+            "Energizing Rod at 0,101,20: 0/20000000 FE (200000 FE/t a side, no orb, t=40)"
+        );
     }
 
     #[test]

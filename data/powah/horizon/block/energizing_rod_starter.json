@@ -1,0 +1,30 @@
+{
+  "template": "minecraft:iron_block",
+  "properties": {
+    "hardness": 2.0,
+    "explosion_resistance": 20.0,
+    "sounds": "minecraft:iron_block",
+    "requires_tool": true,
+    "occludes": false
+  },
+  "state_properties": {
+    "facing": {
+      "type": "enum",
+      "values": [
+        "down",
+        "up",
+        "north",
+        "south",
+        "west",
+        "east"
+      ]
+    }
+  },
+  "default_state": {
+    "facing": "down"
+  },
+  "item": true,
+  "components": {
+    "minecraft:max_stack_size": 1
+  }
+}

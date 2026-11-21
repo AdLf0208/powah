@@ -82,15 +82,33 @@ impl Hooks for Mod {
             let cell = registrar.block_key(block);
             registrar.block_energy(&cell, powah::cell_battery(tier));
         }
+        // The energizing orb: the seven slots and the insert-only buffer a rod fills.
+        let orb = registrar.block_key(powah::ORB);
+        registrar.block_container(&orb, powah::orb_container());
+        registrar.block_energy(&orb, powah::orb_battery());
+        // Every rod tier: its own capacity and per-side transfer.
+        for (index, (block, _)) in powah::RODS.into_iter().enumerate() {
+            let tier = runtime::rod_tier(index).expect("every rod id is on the tier ladder");
+            let rod = registrar.block_key(block);
+            registrar.block_energy(&rod, powah::rod_battery(tier));
+        }
 
-        // One type per block, and two Part types: the furnator burns, a cell and the
-        // cable only queue their position for the move phase.
+        // One type per block, and three Part types: the furnator burns, the orb
+        // fills and completes, a cell, a cable and a rod only queue their position
+        // for the move phase (the rod's move into its orb is one of its jobs).
         let furnator_kind = powah::declare(registrar, powah::FURNATOR_TYPE);
         let part = powah::FurnatorPart::new(Arc::clone(&self.queue));
         if let Err(error) = registrar.block_entity_part(&furnator_kind, part) {
             context.refuse(&error.to_string());
         }
+        let orb_kind = powah::declare(registrar, powah::ORB_TYPE);
+        if let Err(error) = registrar.block_entity_part(&orb_kind, powah::OrbPart) {
+            context.refuse(&error.to_string());
+        }
         for (_, name) in powah::CELLS {
+            declare_idle(registrar, context, &self.queue, name);
+        }
+        for (_, name) in powah::RODS {
             declare_idle(registrar, context, &self.queue, name);
         }
         declare_idle(registrar, context, &self.queue, powah::CABLE_TYPE);

@@ -83,6 +83,43 @@ definition (upstream's `AbstractEnergyBlock`: 2.0/20.0, metal sounds, `occludes:
 The five other recipes need `powah:steel_energized` / `powah:crystal_*`, which only the Energizing Orb
 makes; they are not carried and are recorded `blocked(energizing-orb)` in `notes.md`.
 
+## Slice 5 — the Energizing Orb, the rod ladder and the materials (2026-11-21)
+
+The gate slice 4 hit: the orb makes `powah:steel_energized` and the four crystals, and without
+it five of six cell recipes and the whole capacitor ladder above `capacitor_basic` are
+unreachable.
+
+| Family | Files |
+|---|---|
+| blocks (9) | `data/powah/horizon/block/{energizing_orb,energizing_rod_starter,basic,hardened,blazing,niotic,spirited,nitro,blazing_crystal_block}.json` — the orb and the rods declare the six-value `facing` state upstream's `Facing.ALL` gives them (`minecraft:iron_block` + `state_properties`, default `down`, `occludes: false`, stack 1); the material block is `minecraft:stone` with upstream's 2.0/20.0 metal |
+| blockstates (9) | `assets/powah/blockstates/<block>.json`, carried (six `facing` variants each, from the jar) |
+| block models (10) | `assets/powah/models/block/<block>.json` plus the rods' shared `energizing_rod.json` parent |
+| item models (20) + item definitions (20) | `assets/powah/models/item/…`, `assets/powah/items/…` for the nine blocks and the eleven plain items |
+| item definitions (11) | `data/powah/horizon/item/<item>.json` — `minecraft:stick` (64-stack), as slice 2's |
+| textures (23) | the orb's three, the rod's shared one and seven gems, the material block, the five materials (three animated, `.mcmeta` carried) and the six capacitors |
+| loot (9) | `data/powah/loot_table/blocks/<block>.json` (the jar's 26.3 shape) |
+| recipes (21) + advancements (21) | the orb, seven rods, `capacitor_basic_large`, five capacitor tiers, the five previously blocked cells, `blazing_crystal_block` and its 9-back shapeless |
+| tags | the nine join `minecraft:mineable/pickaxe`; the jar's `powah:energizing_rods` block and item tags are carried |
+| creative tab | the twenty new items join `powah:horizon/creative_tab/machines.json` |
+| lang | unchanged: the carry's `en_us.json` already has every key |
+
+**Not carried:** the jar's `data/powah/recipe/energizing/*.json` — `powah:energizing` is a
+custom recipe type the pin has no loader for, so the six rows live in `src/runtime.rs` as a
+table (`energizing()`), matched per filled slot. `blazing_crystal_2`'s ingredient is
+`c:rods/blaze`, which has no 26.3 equivalent, so it is carried as `minecraft:blaze_rod`
+(the tag's vanilla member) instead.
+
+Two patches, both from the pin's loader and recorded in `notes.md`:
+
+1. **Ingredients are the string form** (`"minecraft:quartz_block"`), not `{"item": …}`;
+2. **NeoForge `c:` tags become the vanilla member they resolve to** — 26.3 has no `c:` tags:
+   `c:glass_blocks` → `minecraft:glass`, `c:storage_blocks/quartz` → `minecraft:quartz_block`.
+   The same replacement is applied in the recipe-unlock advancements, or a recipe would never
+   unlock.
+
+`tools/carry_slice5.py` (in the port root) reproduces this slice's 160 files from the raw carry
+and `--check` verifies the tree still matches; **no asset or model is invented**.
+
 ## Where this content lives now (0.2.0)
 
 Since the SDK migration the carried tree **is the package root**: `assets/powah/` and

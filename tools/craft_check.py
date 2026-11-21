@@ -15,11 +15,15 @@ names, in survival so the grid is really consumed, and asserts:
 4. an off-pattern grid (a stick where the casing belongs) leaves the result
    empty.
 
-The twelve cases are the eight material recipes slice 2 adds, the three machine
-recipes slice 1 carried but could not craft, and slice 4's basic energy cell
-(the only cell tier whose recipe is craftable before the Energizing Orb). A wrong id or count exits
-1 with the observed slot; `SELFTEST=1` expects the first output one item too
-high, so the run MUST fail — that is what proves the assertions can fail.
+The cases are the eight material recipes slice 2 adds, the three machine recipes
+slice 1 carried but could not craft, slice 4's basic energy cell, and slice 5's
+twenty-one: the energizing orb, the seven rods, the large capacitor and its five
+tiers, the five cell recipes that needed the orb's materials, and the blazing
+crystal block both ways. A wrong id or count exits 1 with the observed slot and
+two off-pattern grids (a stick where the casing goes, on the furnator's and the
+orb's shapes) must leave the result empty. `SELFTEST=1` expects the first output
+one item too high, so the run MUST fail — that is what proves the assertions can
+fail.
 """
 import json
 import os
@@ -53,6 +57,52 @@ CAPACITOR = {"minecraft:iron_ingot": [101, 103, 105, 107],
 CELL_BASIC = {"minecraft:iron_ingot": [100, 102, 106, 108],
               "powah:capacitor_basic": [101, 103, 105, 107],
               "powah:dielectric_casing": [104]}
+
+# --- slice 5: the energizing orb, the rod ladder and the materials ------------
+
+# `ggg/gcg/rrr`: 5 glass blocks, a casing, 3 horizontal dielectric rods.
+ENERGIZING_ORB = {"minecraft:glass": [100, 101, 102, 103, 105],
+                  "powah:dielectric_casing": [104],
+                  "powah:dielectric_rod_horizontal": [106, 107, 108]}
+
+
+def rod(capacitor, below, quartz="minecraft:quartz_block"):
+    """`" q "/"bcb"/" h "`: a quartz block, two capacitors, a casing and the
+    rod the tier is built on. The starter is the jar's exception: its `q` is a
+    piece of quartz, not a quartz block."""
+    return {quartz: [101],
+            capacitor: [103, 105],
+            "powah:dielectric_casing": [104],
+            below: [107]}
+
+
+# `" q "/"hch"/" e "`: two capacitors of the tier in the middle row (the casing
+# sits between them), a quartz block and the previous rod in the bottom row.
+ROD_HARDENED = {"minecraft:quartz_block": [101],
+                "powah:capacitor_hardened": [103, 105],
+                "powah:dielectric_casing": [104],
+                "powah:energizing_rod_basic": [107]}
+
+
+def capacitor(material):
+    """`pbp/bcb/pbp`: four dielectric paste, four of the material and a large
+    capacitor in the centre (the jar's `c` is `capacitor_basic_large`)."""
+    return {"powah:dielectric_paste": [100, 102, 106, 108],
+            material: [101, 103, 105, 107],
+            "powah:capacitor_basic_large": [104]}
+
+
+def cell(material, capacitor_id, below):
+    """`m?m/cdc/m?m`: four of the tier's material, its capacitor in the middle
+    column, the previous tier's cell beside the casing."""
+    return {material: [100, 102, 106, 108],
+            capacitor_id: [101, 107],
+            below: [103, 105],
+            "powah:dielectric_casing": [104]}
+
+
+CELL_HARDENED = cell("powah:steel_energized", "powah:capacitor_hardened",
+                     "powah:energy_cell_basic")
 
 
 def shaped(label, pattern, out, out_count):
@@ -111,6 +161,63 @@ CASES = [
     # --- slice 4: the basic cell, the one tier whose recipe this slice carries --
     shaped("4 iron + 4 basic capacitors + casing -> a basic energy cell",
            CELL_BASIC, "powah:energy_cell_basic", 1),
+    # --- slice 5: the orb, the rod ladder and the materials it makes -----------
+    shaped("5 glass + casing + 3 horizontal rods -> an energizing orb",
+           ENERGIZING_ORB, "powah:energizing_orb", 1),
+    shaped("quartz + 2 tiny capacitors + casing + rod -> a starter rod",
+           rod("powah:capacitor_basic_tiny", "powah:dielectric_rod",
+               quartz="minecraft:quartz"),
+           "powah:energizing_rod_starter", 1),
+    shaped("quartz + 2 capacitors + casing + starter rod -> a basic rod",
+           rod("powah:capacitor_basic", "powah:energizing_rod_starter"),
+           "powah:energizing_rod_basic", 1),
+    shaped("quartz + 2 hardened capacitors + casing + basic rod -> a hardened rod",
+           ROD_HARDENED, "powah:energizing_rod_hardened", 1),
+    shaped("quartz + 2 blazing capacitors + casing + hardened rod -> a blazing rod",
+           rod("powah:capacitor_blazing", "powah:energizing_rod_hardened"),
+           "powah:energizing_rod_blazing", 1),
+    shaped("quartz + 2 niotic capacitors + casing + blazing rod -> a niotic rod",
+           rod("powah:capacitor_niotic", "powah:energizing_rod_blazing"),
+           "powah:energizing_rod_niotic", 1),
+    shaped("quartz + 2 spirited capacitors + casing + niotic rod -> a spirited rod",
+           rod("powah:capacitor_spirited", "powah:energizing_rod_niotic"),
+           "powah:energizing_rod_spirited", 1),
+    shaped("quartz + 2 nitro capacitors + casing + spirited rod -> a nitro rod",
+           rod("powah:capacitor_nitro", "powah:energizing_rod_spirited"),
+           "powah:energizing_rod_nitro", 1),
+    shapeless("two basic capacitors -> one large capacitor",
+              [("powah:capacitor_basic", 100), ("powah:capacitor_basic", 101)],
+              "powah:capacitor_basic_large", 1),
+    shaped("paste + energized steel + large capacitor -> 2 hardened capacitors",
+           capacitor("powah:steel_energized"), "powah:capacitor_hardened", 2),
+    shaped("paste + blazing crystal + large capacitor -> 2 blazing capacitors",
+           capacitor("powah:crystal_blazing"), "powah:capacitor_blazing", 2),
+    shaped("paste + niotic crystal + large capacitor -> a niotic capacitor",
+           capacitor("powah:crystal_niotic"), "powah:capacitor_niotic", 1),
+    shaped("paste + spirited crystal + large capacitor -> a spirited capacitor",
+           capacitor("powah:crystal_spirited"), "powah:capacitor_spirited", 1),
+    shaped("paste + nitro crystal + large capacitor -> a nitro capacitor",
+           capacitor("powah:crystal_nitro"), "powah:capacitor_nitro", 1),
+    shaped("4 energized steel + 2 hardened capacitors + basic cell + casing -> a hardened cell",
+           CELL_HARDENED, "powah:energy_cell_hardened", 1),
+    shaped("4 blazing crystals + 2 blazing capacitors + hardened cell + casing -> a blazing cell",
+           cell("powah:crystal_blazing", "powah:capacitor_blazing",
+                "powah:energy_cell_hardened"), "powah:energy_cell_blazing", 1),
+    shaped("4 niotic crystals + 2 niotic capacitors + blazing cell + casing -> a niotic cell",
+           cell("powah:crystal_niotic", "powah:capacitor_niotic",
+                "powah:energy_cell_blazing"), "powah:energy_cell_niotic", 1),
+    shaped("4 spirited crystals + 2 spirited capacitors + niotic cell + casing -> a spirited cell",
+           cell("powah:crystal_spirited", "powah:capacitor_spirited",
+                "powah:energy_cell_niotic"), "powah:energy_cell_spirited", 1),
+    shaped("4 nitro crystals + 2 nitro capacitors + spirited cell + casing -> a nitro cell",
+           cell("powah:crystal_nitro", "powah:capacitor_nitro",
+                "powah:energy_cell_spirited"), "powah:energy_cell_nitro", 1),
+    shapeless("nine blazing crystals -> one blazing crystal block",
+              [("powah:crystal_blazing", slot) for slot in range(100, 109)],
+              "powah:blazing_crystal_block", 1),
+    shapeless("one blazing crystal block -> nine blazing crystals",
+              [("powah:blazing_crystal_block", 100)],
+              "powah:crystal_blazing", 9),
 ]
 
 
@@ -154,6 +261,14 @@ def main():
         raise SystemExit("no empty inventory slot to take the result into")
 
     def setup(given):
+        """Open a fresh crafting table with exactly `given` in the inventory.
+
+        The interact is retried: it answers "no face of block ... is visible" or
+        "out of reach" when the player drifted or fell, and every click after it
+        would then land in the inventory instead of the grid — the failure this
+        cost the slice-5 run (12 cases read "got None xNone" from a screen that
+        was not the table).
+        """
         try:
             run("close")
         except SystemExit:
@@ -161,30 +276,46 @@ def main():
         wait(3)
         run("setblock", x, y, z, "minecraft:air")
         run("setblock", x, y, z, "minecraft:crafting_table")
-        # Stand two and a half blocks away and face the table: `interact` refuses
-        # a face the player's eye cannot see, and standing right beside it puts
-        # the eye above the block (measured: "no face of block ... is visible").
-        run("command", f"tp @s {float(x) - 2.5} {y} {float(z) + 0.5}")
-        run("look-at-block", x, y, z)
         run("command", "gamemode survival @s")
         run("command", "clear @s")
         wait(2)
         for item, count in given:
             run("give", item, str(count))
         wait(3)
-        run("interact", x, y, z)
-        wait(4)
+        # Stand two and a half blocks away and face the table: `interact` refuses
+        # a face the player's eye cannot see, and standing right beside it puts
+        # the eye above the block (measured: "no face of block ... is visible").
+        for _ in range(4):
+            run("command", f"tp @s {float(x) - 2.5} {y} {float(z) + 0.5}")
+            run("look-at-block", x, y, z)
+            wait(2)
+            run("interact", x, y, z)
+            wait(4)
+            screen = run("screen")
+            if any(slot["slot"] == RESULT for slot in screen.get("slots", [])):
+                return
+        raise SystemExit(f"could not open the crafting table at {x},{y},{z}: {screen}")
 
     def place(item, targets):
-        """Pick up ITEM and right-click one into each target slot."""
-        source = find(item)
-        run("click-slot", str(source))
-        wait(1)
-        for target in targets:
-            run("click-slot", str(target), "right")
+        """Place one ITEM into each target slot.
+
+        A pickup puts as many into the grid as the stack holds: a right click with
+        an empty cursor places nothing, and the cells, the rods and the orb stack
+        to one, so one pickup per slot is what those recipes need.
+        """
+        remaining = list(targets)
+        while remaining:
+            source = find(item)
+            stack = slot_of(source) or {}
+            per_pickup = max(1, int(stack.get("count") or 1))
+            run("click-slot", str(source))
             wait(1)
-        run("click-slot", str(source))
-        wait(2)
+            for target in remaining[:per_pickup]:
+                run("click-slot", str(target), "right")
+                wait(1)
+            del remaining[:per_pickup]
+            run("click-slot", str(source))
+            wait(2)
 
     failures = []
 
@@ -211,7 +342,10 @@ def main():
         expected = want_count + 1 if selftest and index == 0 else want_count
         print(f"{case['label']} -> {json.dumps(result)}")
         if got != want_item or got_count != expected:
-            fail(f"{case['label']}: expected {expected} {want_item}, got {got} x{got_count}")
+            grid = [{"slot": s["slot"], "item": s.get("item")}
+                    for s in slots() if 100 <= s["slot"] < 200]
+            fail(f"{case['label']}: expected {expected} {want_item}, got {got} x{got_count}; "
+                 f"grid {json.dumps(grid)}")
             if selftest and index == 0:
                 # The selftest's whole point: the wrong count must be caught here.
                 break
@@ -244,30 +378,42 @@ def main():
         run("close")
         wait(2)
 
-    # The off-pattern control: the furnator's shape with a stick where the
-    # dielectric casing belongs must leave the result empty. The casing is in the
-    # inventory but not in the grid, so only the stick is out of place.
-    setup([("powah:dielectric_paste", 5), ("powah:capacitor_basic_tiny", 2),
-           ("powah:dielectric_casing", 1), ("minecraft:stick", 1),
-           ("minecraft:furnace", 1)])
-    for item, targets in FURNATOR.items():
-        if item == "powah:dielectric_casing":
-            continue
-        place(item, targets)
-    place("minecraft:stick", [104])
-    result = slot_of(RESULT)
-    print(f"furnator shape with a stick -> {json.dumps(result)}")
-    if result and result.get("item"):
-        fail(f"the stick control crafted {result['item']} x{result.get('count')}")
-    run("close")
-    wait(2)
+    # The off-pattern controls: the furnator's shape with a stick where the
+    # dielectric casing belongs must leave the result empty, and so must the orb's
+    # shape with a stick where its casing belongs. The casing is in the inventory
+    # but not in the grid, so only the stick is out of place.
+    for label, pattern, stand_in in (
+        ("furnator", FURNATOR, (104, "powah:dielectric_casing")),
+        ("energizing orb", ENERGIZING_ORB, (104, "powah:dielectric_casing")),
+    ):
+        given = {}
+        for item, targets in pattern.items():
+            if targets == [stand_in[0]]:
+                continue
+            given[item] = len(targets)
+        given["minecraft:stick"] = 1
+        setup(sorted(given.items()))
+        for item, targets in pattern.items():
+            if targets == [stand_in[0]]:
+                continue
+            place(item, targets)
+        place("minecraft:stick", [stand_in[0]])
+        result = slot_of(RESULT)
+        print(f"{label} shape with a stick -> {json.dumps(result)}")
+        if result and result.get("item"):
+            fail(f"the {label} stick control crafted {result['item']} "
+                 f"x{result.get('count')}")
+        run("close")
+        wait(2)
     run("command", "gamemode creative @s")
 
     if failures:
         raise SystemExit(1)
-    print("recipe PASS: the eight material recipes, the three machine recipes and the basic "
-          "energy cell craft their declared output id and count, every ingredient is consumed, "
-          "the lava bucket leaves its bucket, and the off-pattern grid leaves the result empty")
+    print("recipe PASS: every carried recipe — the eight material recipes, the three machines, "
+          "the basic cell, and slice 5's orb, seven rods, six capacitors, five cells and the "
+          "blazing crystal block both ways — crafts its declared output id and count, every "
+          "ingredient is consumed, the lava bucket leaves its bucket, and both off-pattern grids "
+          "leave the result empty")
 
 
 if __name__ == "__main__":

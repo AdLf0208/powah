@@ -54,6 +54,23 @@
 # fail. SELFTEST=network expects the three-cable run to have delivered nothing
 # (it must FAIL), proving the network assertion can fail.
 #
+# Slice 5 (the five cell recipes' `blocked(energizing-orb)` gate) adds the
+# Energizing Orb, its seven rods and the five materials they make:
+#  - a starter rod beside an orb holding iron and gold fills it to exactly its
+#    recipe's 10,000 FE and stands at 0, the orb writes 2 energized steel into
+#    slot 0 and clears its inputs;
+#  - an orb with no rod in range produces nothing, and a rod beside an orb whose
+#    inputs match no recipe keeps its charge (the rod only gives to an orb that
+#    `containRecipe()`s);
+#  - a nitro rod fills four blaze powder to exactly 120,000 FE — it keeps the
+#    other 80,000 — then the blaze-rod variant, a diamond (300,000), an emerald
+#    (1,000,000) and the nether-star recipe (20,000,000 into 16 nitro crystals);
+#  - the orb, every rod and the material block are given/placed/mined, and the
+#    crafting table crafts the orb, the seven rods, the six capacitors and the
+#    five cell recipes that were blocked before this slice.
+# SELFTEST=orb expects the nitro rod to have kept its whole 200,000 (it must
+# FAIL), proving the exact-fall assertion can fail.
+#
 # Slice 3 (gap 2, "a run of two or more cables does not relay") adds:
 #  - a source cell, three cables and a sink cell in one row: the charge crosses
 #    the run (0.2.2 delivered nothing), the two cells' sum stays 100000, and a
@@ -205,6 +222,74 @@ expect_info() { # expect_info X Y Z SUBSTRING
     esac
 }
 
+# set_reply X Y Z AMOUNT SUBSTRING: `/powah set`, asserting the command's own
+# reply. Used where the target feeds something and an equality poll on its buffer
+# can never settle (a rod beside an orb with a recipe drains the same tick).
+set_reply() { # X Y Z AMOUNT SUBSTRING
+    local out line=""
+    say "powah set $4 $1 $2 $3"
+    # A chat command's reply lands a round trip later (~40 ticks), so the wait is
+    # generous: ten iterations of `wait 4` read the chat before it arrived.
+    for _ in $(seq 1 30); do
+        ctl wait 10
+        out=$(ctl messages 20)
+        # `chat` is newest first, so the newest matching line is the first.
+        line=$(jq -r '.chat[]' <<<"$out" |
+            grep -E "Energy set to|stores no energy|No Powah block" | head -1)
+        case "$line" in
+            *"$5"*) echo "  set($1,$2,$3) reply: $line"; return 0 ;;
+        esac
+    done
+    fail "expected /powah set $4 at $1,$2,$3 to answer '$5', got '$line'"
+}
+
+# --- slice 5: the energizing orb's seven slots ---------------------------------
+
+# orb_clear X Y Z: empty the orb's seven slots, the previous run's result included
+# (the orb's tick clears them all and writes the result, as upstream's `inv.clear`
+# does, so a stale result would be overwritten unreported).
+orb_clear() { # orb_clear X Y Z
+    local slot
+    for slot in 0 1 2 3 4 5 6; do
+        ctl command "item replace block $1 $2 $3 container.$slot with minecraft:air" >/dev/null
+    done
+    ctl wait 3
+}
+# orb_put X Y Z SLOT ITEM COUNT: one input stack, the way automation fills the orb
+# (`item replace block ... container.N`, the same path the furnator's fuel uses).
+orb_put() { # orb_put X Y Z SLOT ITEM COUNT
+    ctl command "item replace block $1 $2 $3 container.$4 with $5 $6" >/dev/null
+    ctl wait 2
+}
+# orb_slot X Y Z N: the orb's slot N, as `ctl container` reports it.
+orb_slot() { # orb_slot X Y Z N
+    ctl container "$1" "$2" "$3" | jq -c --argjson n "$4" '.slots[$n]'
+}
+# orb_wait X Y Z ITEM COUNT: poll slot 0 until it holds COUNT of ITEM. A chat round
+# trip is ~40 ticks, and a nitro rod fills 200,000 a tick, so the wait is generous
+# (a 20,000,000 FE recipe takes 100 fills).
+orb_wait() { # orb_wait X Y Z ITEM COUNT
+    local i slot
+    for i in $(seq 1 40); do
+        ctl wait 10
+        slot=$(orb_slot "$1" "$2" "$3" 0)
+        if [ "$(jq -r '.item // ""' <<<"$slot")" = "$4" ] &&
+            [ "$(jq -r '.count // 0' <<<"$slot")" = "$5" ]; then
+            echo "$slot"
+            return 0
+        fi
+    done
+    echo "$slot"
+    return 1
+}
+# orb_no_result X Y Z: slot 0 is still empty (a control run).
+orb_no_result() { # orb_no_result X Y Z
+    local slot
+    slot=$(orb_slot "$1" "$2" "$3" 0)
+    [ "$(jq -r '.item // ""' <<<"$slot")" = "" ] ||
+        fail "the orb at $1,$2,$3 produced $slot when it should not have"
+}
+
 # The energy in an info line: the number before "/<capacity> FE".
 energy_of() { sed -nE 's/.* at [-0-9]+,[-0-9]+,[-0-9]+: ([0-9]+)\/[0-9]+ FE.*/\1/p' <<<"$1"; }
 carbon_of() { sed -nE 's/.*carbon ([0-9]+).*/\1/p' <<<"$1"; }
@@ -300,6 +385,25 @@ control_leg() {
     case "$tier" in
         *"Unknown block"*|*"unknown block"*|*"error"*) ;;
         *) fail "the control game knew powah:energy_cell_nitro, so the content did not come from this package" ;;
+    esac
+    # Slice 5: the orb, a rod and the material it makes are all this package's.
+    orb=$(ctl command "setblock 4 100 1 powah:energizing_orb")
+    echo "  orb setblock reply: $orb"
+    case "$orb" in
+        *"Unknown block"*|*"unknown block"*|*"error"*) ;;
+        *) fail "the control game knew powah:energizing_orb, so the content did not come from this package" ;;
+    esac
+    rod=$(ctl command "setblock 4 100 2 powah:energizing_rod_nitro")
+    echo "  rod setblock reply: $rod"
+    case "$rod" in
+        *"Unknown block"*|*"unknown block"*|*"error"*) ;;
+        *) fail "the control game knew powah:energizing_rod_nitro, so the content did not come from this package" ;;
+    esac
+    crystal=$(ctl command "give @s powah:crystal_blazing 1")
+    echo "  crystal give reply: $crystal"
+    case "$crystal" in
+        *"Unknown item"*|*"unknown item"*|*"error"*|*"not found"*) ;;
+        *) fail "the control game knew powah:crystal_blazing, so the content did not come from this package" ;;
     esac
     name=$(ctl block 4 100 0 | jq -r '.name // .block // "unknown"')
     [ "$name" = "minecraft:air" ] || fail "the control game holds $name, so the block id was known"
@@ -539,9 +643,127 @@ echo "  pair sink:   $pair_sink"
 ctl command "setblock 16 100 16 minecraft:air" >/dev/null
 ctl wait 4
 
+echo "== slice 5: the starter rod fills the orb with exactly the recipe's 10,000 FE =="
+# An Energizing Orb holds seven slots (0 the result, 1-6 the inputs) and a buffer
+# whose capacity is the recipe its inputs match: iron + gold is 10,000 FE into two
+# energized steel. The starter rod holds exactly 10,000 and gives 100 FE/t, so the
+# run is exact on both sides: the orb reaches its capacity and the rod reaches 0.
+place 0 100 20 powah:energizing_orb
+place 0 101 20 powah:energizing_rod_starter
+orb_clear 0 100 20
+orb_put 0 100 20 1 minecraft:iron_ingot 1
+orb_put 0 100 20 2 minecraft:gold_ingot 1
+expect_info 0 100 20 "0/10000 FE (recipe powah:steel_energized x2, inputs 2"
+expect_info 0 101 20 "0/10000 FE (100 FE/t a side, orb 0,100,20"
+# The starter rod's capacity is 10,000 (`energizingCapacity`), so `/powah set
+# 20000` clamps, and the command says so: the first exact read of this slice's
+# own numbers. (The rod drains while a reply lands, so the reply is the assertion.)
+set_reply 0 101 20 20000 "Energy set to 10000 FE."
+steel=$(orb_wait 0 100 20 powah:steel_energized 2) ||
+    fail "the starter rod did not energize iron and gold into 2 energized steel: $steel / $(info 0 100 20) / $(info 0 101 20)"
+echo "  output(0,100,20) = $steel"
+steel_rod=$(info 0 101 20)
+echo "  rod after: $steel_rod"
+[ "$(energy_of "$steel_rod")" = 0 ] ||
+    fail "the rod held 10,000 FE and gave 100 a tick; it should have given exactly 10,000 and stand at 0: $steel_rod"
+expect_info 0 100 20 "0/0 FE (no recipe"
+[ "$(orb_slot 0 100 20 1)" = "null" ] || fail "the orb kept its input slot 1: $(orb_slot 0 100 20 1)"
+[ "$(orb_slot 0 100 20 2)" = "null" ] || fail "the orb kept its input slot 2: $(orb_slot 0 100 20 2)"
+
+echo "== slice 5: an orb with no rod in range produces nothing =="
+place 10 100 20 powah:energizing_orb
+orb_clear 10 100 20
+orb_put 10 100 20 1 minecraft:iron_ingot 1
+orb_put 10 100 20 2 minecraft:gold_ingot 1
+ctl wait 60
+orb_no_result 10 100 20
+expect_info 10 100 20 "0/10000 FE (recipe powah:steel_energized x2, inputs 2"
+
+echo "== slice 5: a rod beside an orb with no recipe keeps its charge =="
+# Upstream's `postTick` only fills while the orb `containRecipe()`s; an orb holding
+# something no recipe matches is inert, and the rod must not leak into it.
+place 20 100 20 powah:energizing_orb
+place 20 101 20 powah:energizing_rod_nitro
+orb_clear 20 100 20
+orb_put 20 100 20 1 minecraft:stick 1
+set_clamped 20 101 20 5000 5000
+ctl wait 60
+expect_info 20 101 20 "5000/20000000 FE"
+expect_info 20 100 20 "0/0 FE (no recipe"
+orb_no_result 20 100 20
+
+echo "== slice 5: a nitro rod makes a blazing crystal at exactly 120,000 FE =="
+# Four blaze powder at 120,000 FE. The nitro rod holds and gives 200,000, so the
+# orb takes exactly its recipe's energy out of the rod and the rod is left with
+# 80,000 — the assertion a wrong cap or a wrong move would break.
+place 0 100 28 powah:energizing_orb
+place 0 101 28 powah:energizing_rod_nitro
+orb_clear 0 100 28
+for slot in 1 2 3 4; do orb_put 0 100 28 "$slot" minecraft:blaze_powder 1; done
+expect_info 0 100 28 "0/120000 FE (recipe powah:crystal_blazing x1, inputs 4"
+set_reply 0 101 28 200000 "Energy set to 200000 FE."
+blazing=$(orb_wait 0 100 28 powah:crystal_blazing 1) ||
+    fail "the nitro rod did not energize four blaze powder into a blazing crystal: $blazing / $(info 0 100 28) / $(info 0 101 28)"
+echo "  output(0,100,28) = $blazing"
+rod_left=80000
+if [ "$SELFTEST" = orb ]; then
+    # The counterfactual: a run that claims the rod kept its whole charge must FAIL
+    # here, so the assertion is alive.
+    rod_left=200000
+    echo "  SELFTEST: expecting the rod to have kept its whole 200,000 (this must fail)"
+fi
+expect_info 0 101 28 "$rod_left/20000000 FE"
+expect_info 0 100 28 "0/0 FE (no recipe"
+[ "$(orb_slot 0 100 28 4)" = "null" ] || fail "the orb kept its fourth input slot: $(orb_slot 0 100 28 4)"
+
+echo "== slice 5: the jar's second blazing recipe, one blaze rod =="
+orb_clear 0 100 28
+orb_put 0 100 28 1 minecraft:blaze_rod 1
+set_reply 0 101 28 200000 "Energy set to 200000 FE."
+rod_blaze=$(orb_wait 0 100 28 powah:crystal_blazing 1) ||
+    fail "one blaze rod did not energize into a blazing crystal: $rod_blaze / $(info 0 100 28)"
+echo "  output(0,100,28) = $rod_blaze"
+expect_info 0 101 28 "80000/20000000 FE"
+
+echo "== slice 5: the niotic, spirited and nitro crystals =="
+orb_clear 0 100 28
+orb_put 0 100 28 1 minecraft:diamond 1
+expect_info 0 100 28 "0/300000 FE (recipe powah:crystal_niotic x1, inputs 1"
+set_reply 0 101 28 400000 "Energy set to 400000 FE."
+niotic=$(orb_wait 0 100 28 powah:crystal_niotic 1) ||
+    fail "a diamond did not energize into a niotic crystal: $niotic / $(info 0 100 28)"
+echo "  output(0,100,28) = $niotic"
+expect_info 0 101 28 "100000/20000000 FE"
+
+orb_clear 0 100 28
+orb_put 0 100 28 1 minecraft:emerald 1
+set_reply 0 101 28 1000000 "Energy set to 1000000 FE."
+spirited=$(orb_wait 0 100 28 powah:crystal_spirited 1) ||
+    fail "an emerald did not energize into a spirited crystal: $spirited / $(info 0 100 28)"
+echo "  output(0,100,28) = $spirited"
+expect_info 0 101 28 "0/20000000 FE"
+
+orb_clear 0 100 28
+orb_put 0 100 28 1 minecraft:nether_star 1
+orb_put 0 100 28 2 minecraft:redstone_block 1
+orb_put 0 100 28 3 minecraft:redstone_block 1
+orb_put 0 100 28 4 powah:blazing_crystal_block 1
+expect_info 0 100 28 "0/20000000 FE (recipe powah:crystal_nitro x16, inputs 4"
+set_reply 0 101 28 20000000 "Energy set to 20000000 FE."
+# The largest recipe: 20,000,000 FE at 200,000 a tick is 100 fills after the
+# rod's 20-tick warm-up, so this phase is the one that can time out.
+nitro=$(orb_wait 0 100 28 powah:crystal_nitro 16) ||
+    fail "the nitro recipe did not produce 16 nitro crystals: $nitro / $(info 0 100 28) / $(info 0 101 28)"
+echo "  output(0,100,28) = $nitro"
+expect_info 0 101 28 "0/20000000 FE"
+
 echo "== slice 2: the six dielectric/capacitor items are real items =="
 for item in powah:dielectric_paste powah:dielectric_rod powah:dielectric_rod_horizontal \
-            powah:dielectric_casing powah:capacitor_basic powah:capacitor_basic_tiny; do
+            powah:dielectric_casing powah:capacitor_basic powah:capacitor_basic_tiny \
+            powah:steel_energized powah:crystal_blazing powah:crystal_niotic \
+            powah:crystal_spirited powah:crystal_nitro powah:capacitor_basic_large \
+            powah:capacitor_hardened powah:capacitor_blazing powah:capacitor_niotic \
+            powah:capacitor_spirited powah:capacitor_nitro; do
     ctl give "$item" 3 >/dev/null || fail "cannot give $item"
     ctl wait 2
     got=$(inv_count "$item")
@@ -553,6 +775,12 @@ case "$unknown" in
     *"Unknown item"*|*"unknown item"*|*error*|*"not found"*)
         echo "  unknown id refused: $unknown" ;;
     *) fail "an unknown powah item id was accepted: $unknown" ;;
+esac
+unknown=$(ctl command "give @s powah:crystal_uraninite 1")
+case "$unknown" in
+    *"Unknown item"*|*"unknown item"*|*error*|*"not found"*)
+        echo "  unknown material id refused: $unknown" ;;
+    *) fail "an unknown powah material id was accepted: $unknown" ;;
 esac
 ctl command "clear @s" >/dev/null
 ctl wait 3
@@ -602,8 +830,21 @@ for tier in basic hardened blazing niotic spirited nitro; do
     got=$(echo "$broken" | jq -r --arg id "powah:energy_cell_$tier" '.drops[$id] // 0')
     [ "$got" -ge 1 ] || fail "breaking powah:energy_cell_$tier dropped $got of itself, not the machine"
 done
+# Slice 5: the orb, every rod tier and the material block drop themselves.
+for block in powah:energizing_orb powah:energizing_rod_starter powah:energizing_rod_basic \
+             powah:energizing_rod_hardened powah:energizing_rod_blazing \
+             powah:energizing_rod_niotic powah:energizing_rod_spirited \
+             powah:energizing_rod_nitro powah:blazing_crystal_block; do
+    place 6 100 0 "$block"
+    ctl look-at-block 6 100 0 >/dev/null || true
+    broken=$(ctl break 6 100 0) || fail "cannot break $block at 6,100,0"
+    echo "$broken" | jq -c '{scenario:"loot", block, drops}'
+    [ "$(echo "$broken" | jq -r '.block')" = "minecraft:air" ] || fail "$block did not break"
+    got=$(echo "$broken" | jq -r --arg id "$block" '.drops[$id] // 0')
+    [ "$got" -ge 1 ] || fail "breaking $block dropped $got of itself, not the block"
+done
 ctl command "gamemode creative @s" >/dev/null
 ctl command "clear @s" >/dev/null
 ctl wait 3
 
-echo "PASS: a fuelled furnator made FE, the cable carried it into the cell, an unfuelled furnator made nothing, a cell without a cable stayed empty, a full cell stayed full, a charged cell drained through a cable into an empty one, a three-cable network carried a charge across its run with the two cells' sum unchanged and a cell off the network empty, the six material items exist, every material and machine recipe crafted its declared output and consumed its ingredients, each machine dropped itself, every energy cell tier clamped 2,000,000,000 FE at its own capacity and carried its own transfer, two adjacent cells swapped within their own transfer cap without creating FE, every cell tier dropped itself, and every guessed id is unknown without the package"
+echo "PASS: a fuelled furnator made FE, the cable carried it into the cell, an unfuelled furnator made nothing, a cell without a cable stayed empty, a full cell stayed full, a charged cell drained through a cable into an empty one, a three-cable network carried a charge across its run with the two cells' sum unchanged and a cell off the network empty, the six material items exist, every material and machine recipe crafted its declared output and consumed its ingredients, each machine dropped itself, every energy cell tier clamped 2,000,000,000 FE at its own capacity and carried its own transfer, two adjacent cells swapped within their own transfer cap without creating FE, every cell tier dropped itself, a starter rod filled the orb to exactly its recipe's 10,000 FE and stood at 0, an orb with no rod and an orb with no recipe produced nothing while its rod kept its charge, a nitro rod made a blazing crystal at exactly 120,000 FE and kept the other 80,000, the blaze-rod blazing recipe, the niotic, spirited and nitro crystals all energised, every new block and item exists, every carried recipe including the five previously blocked cells crafts its declared output and consumes its ingredients, and every guessed id is unknown without the package"

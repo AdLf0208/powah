@@ -1,0 +1,65 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_capacitor_niotic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:capacitor_niotic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_crystal_niotic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:crystal_niotic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_dielectric_casing": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:dielectric_casing"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_energy_cell_blazing": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:energy_cell_blazing"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "powah:crafting/energy_cell_niotic"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_energy_cell_blazing",
+      "has_capacitor_niotic",
+      "has_crystal_niotic",
+      "has_dielectric_casing"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "powah:crafting/energy_cell_niotic"
+    ]
+  }
+}

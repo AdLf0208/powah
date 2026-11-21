@@ -27,6 +27,23 @@ pub const CABLE_TRANSFER: i32 = 500;
 /// starter, basic, hardened, blazing, niotic, spirited, nitro.
 pub const CELL_TIER_COUNT: usize = 7;
 
+/// How far from an orb a rod may stand (`PowahConfig.general.energizing_range`),
+/// in blocks, Chebyshev distance like upstream's `BlockPos.betweenClosed`.
+pub const ENERGIZING_RANGE: i32 = 4;
+/// The orb's inventory (`this.inv.set(7)`): slot 0 is the result, 1..6 the inputs.
+pub const ORB_SLOTS: usize = 7;
+/// The orb's result slot, the only one a hopper may take from.
+pub const ORB_OUTPUT_SLOT: usize = 0;
+/// The orb's six input slots, the only ones a hopper may fill.
+pub const ORB_INPUT_SLOTS: usize = ORB_SLOTS - 1;
+/// The orb's declared buffer: the largest energizing recipe
+/// (`crystal_nitro`'s 20,000,000). A matched recipe's own energy is the cap its
+/// tick enforces and its readout shows.
+pub const ORB_MAX_ENERGY: i32 = 20_000_000;
+/// How many ticks a rod charges before its first fill
+/// (`EnergizingRodTile`'s `Ticker(20)`); it fills every tick after that.
+pub const ROD_WARMUP: i32 = 20;
+
 /// One energy cell tier's storage numbers: `batteryCapacity` and
 /// `batteryTransfer` at that tier (`config/v2/DefaultEnergies`, both derived from
 /// `baseScaling` — `× 1_000_000` and `× 1_000`).
@@ -257,6 +274,218 @@ fn plan(sides: &[Option<Neighbour>], transfer: i32, rotation: usize) -> Vec<Tran
 pub fn network_moves(ports: &[Neighbour], transfer: i32, rotation: usize) -> Vec<Transfer> {
     let sides: Vec<Option<Neighbour>> = ports.iter().copied().map(Some).collect();
     plan(&sides, transfer, rotation)
+}
+
+/// The most ingredients one energizing recipe has (the nitro crystal's four).
+pub const MAX_INGREDIENTS: usize = 6;
+
+/// The tiers an energizing rod has, in `Tier.getNormalVariants` order: starter,
+/// basic, hardened, blazing, niotic, spirited, nitro.
+pub const ROD_TIER_COUNT: usize = 7;
+
+/// One energizing rod tier's numbers: `energizingCapacity` and
+/// `energizingTransfer` at that tier (`config/v2/DefaultEnergies`, both derived
+/// from `baseScaling` — `× 10_000` and `× 100`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RodTier {
+    pub capacity: i32,
+    pub transfer: i32,
+}
+
+/// The energizing rod tier at `index` (0 = starter … 6 = nitro), `None` past the
+/// ladder.
+#[must_use]
+pub fn rod_tier(index: usize) -> Option<RodTier> {
+    /// `DefaultEnergies.baseScaling`, in `Tier.getNormalVariants` order.
+    const BASE_SCALING: [i32; ROD_TIER_COUNT] = [1, 4, 10, 40, 100, 400, 2_000];
+    /// `energizingTransfer` = `baseScaling * 100`.
+    const TRANSFER_PER_SCALING: i32 = 100;
+    /// `energizingCapacity` = `energizingTransfer * 100`.
+    const CAPACITY_PER_SCALING: i32 = 10_000;
+    let scaling = *BASE_SCALING.get(index)?;
+    Some(RodTier {
+        capacity: scaling * CAPACITY_PER_SCALING,
+        transfer: scaling * TRANSFER_PER_SCALING,
+    })
+}
+
+/// One energizing recipe, as the jar's `data/powah/recipe/energizing/*.json`
+/// declare it: the result, the energy the orb's buffer must reach, and the
+/// ingredients the six input slots must hold.
+///
+/// An ingredient is the list of item ids one jar ingredient accepts. The jar
+/// writes most of them as NeoForge `c:` tags, which 26.3 has no equivalent of;
+/// each is carried as the vanilla member(s) it resolves to (see `notes.md`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnergizingRecipe {
+    pub output: &'static str,
+    pub count: i32,
+    pub energy: i32,
+    pub ingredients: &'static [&'static [&'static str]],
+}
+
+/// The energizing recipes this port carries, in the jar's own order: steel, the
+/// one blaze-powder and the one blaze-rod blazing crystal, niotic, spirited and
+/// the nitro crystal.
+#[must_use]
+pub fn energizing() -> &'static [EnergizingRecipe] {
+    /// The jar's `data/powah/recipe/energizing/*.json`. Each jar ingredient is a
+    /// NeoForge `c:` tag (or an item); 26.3 has no `c:` tags, so the list is the
+    /// vanilla member(s) the tag resolves to (see `notes.md`, slice 5).
+    static RECIPES: [EnergizingRecipe; 6] = [
+        EnergizingRecipe {
+            output: "powah:steel_energized",
+            count: 2,
+            energy: 10_000,
+            // `c:ingots/iron`, `c:ingots/gold`
+            ingredients: &[&["minecraft:iron_ingot"], &["minecraft:gold_ingot"]],
+        },
+        EnergizingRecipe {
+            output: "powah:crystal_blazing",
+            count: 1,
+            energy: 120_000,
+            // four `minecraft:blaze_powder`
+            ingredients: &[
+                &["minecraft:blaze_powder"],
+                &["minecraft:blaze_powder"],
+                &["minecraft:blaze_powder"],
+                &["minecraft:blaze_powder"],
+            ],
+        },
+        EnergizingRecipe {
+            output: "powah:crystal_blazing",
+            count: 1,
+            energy: 120_000,
+            // `c:rods/blaze`
+            ingredients: &[&["minecraft:blaze_rod"]],
+        },
+        EnergizingRecipe {
+            output: "powah:crystal_niotic",
+            count: 1,
+            energy: 300_000,
+            // `c:gems/diamond`
+            ingredients: &[&["minecraft:diamond"]],
+        },
+        EnergizingRecipe {
+            output: "powah:crystal_spirited",
+            count: 1,
+            energy: 1_000_000,
+            // `c:gems/emerald`
+            ingredients: &[&["minecraft:emerald"]],
+        },
+        EnergizingRecipe {
+            output: "powah:crystal_nitro",
+            count: 16,
+            energy: 20_000_000,
+            // `c:nether_stars`, two `c:storage_blocks/redstone`, a blazing crystal block
+            ingredients: &[
+                &["minecraft:nether_star"],
+                &["minecraft:redstone_block"],
+                &["minecraft:redstone_block"],
+                &["powah:blazing_crystal_block"],
+            ],
+        },
+    ];
+    &RECIPES
+}
+
+impl EnergizingRecipe {
+    /// Upstream's `EnergizingRecipe.matches`: each filled input slot takes one
+    /// ingredient, in any order, and every ingredient must be used. A stack of
+    /// four blaze powder in one slot is *one* filled slot, as the jar's
+    /// slot-limit-1 inputs make it.
+    #[must_use]
+    pub fn matches(&self, inputs: &[&str]) -> bool {
+        let mut used = [false; MAX_INGREDIENTS];
+        if inputs.len() != self.ingredients.len() || inputs.len() > MAX_INGREDIENTS {
+            return false;
+        }
+        for input in inputs {
+            let mut taken = false;
+            for (index, ingredient) in self.ingredients.iter().enumerate() {
+                if !used[index] && ingredient.contains(input) {
+                    used[index] = true;
+                    taken = true;
+                    break;
+                }
+            }
+            if !taken {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+/// The recipe the orb's filled input slots match, `None` when they match none.
+#[must_use]
+pub fn energize(inputs: &[&str]) -> Option<&'static EnergizingRecipe> {
+    energizing().iter().find(|recipe| recipe.matches(inputs))
+}
+
+/// What one orb tick decides: the recipe its inputs match, the buffer it holds
+/// afterwards (0 when it completes or clears) and whether the recipe is finished.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OrbStep {
+    pub recipe: Option<&'static EnergizingRecipe>,
+    pub energy: i32,
+    pub done: bool,
+}
+
+/// The orb's rule (`EnergizingOrbTile.onSlotChanged` + `fillEnergy`): a matching
+/// recipe sets the buffer's capacity to *its* energy, a different recipe clears
+/// it (`onSlotChanged` zeroes the buffer), and a buffer that reached the capacity
+/// produces the result. `recorded` is the recipe output the orb last matched;
+/// `None` adopts the energy a rod already moved in (upstream has no such window,
+/// but a rod may fill on the tick the inputs arrive, and that energy is the
+/// recipe's, not another's).
+///
+/// A buffer above the recipe's energy is `done`, never clamped down to it: the
+/// card only ever takes room up to the capacity, so a higher value can only come
+/// from a harness `set`.
+#[must_use]
+pub fn orb_step(inputs: &[&str], energy: i32, recorded: Option<&str>) -> OrbStep {
+    let Some(recipe) = energize(inputs) else {
+        return OrbStep {
+            recipe: None,
+            energy: 0,
+            done: false,
+        };
+    };
+    let changed_recipe = recorded.is_some_and(|output| output != recipe.output);
+    let held = if changed_recipe {
+        0
+    } else {
+        clamp_energy(energy, recipe.energy)
+    };
+    let done = held >= recipe.energy;
+    OrbStep {
+        recipe: Some(recipe),
+        energy: if done { 0 } else { held },
+        done,
+    }
+}
+
+/// What one rod tick moves into its orb, from the orb's own formula
+/// (`EnergizingOrbTile.fillEnergy`): the room left in the orb, capped by what the
+/// rod holds and by the rod tier's transfer.
+#[must_use]
+pub fn orb_fill(rod_stored: i32, rod_transfer: i32, orb_stored: i32, capacity: i32) -> i32 {
+    let room = (capacity.max(0) - orb_stored.max(0)).max(0);
+    room.min(rod_stored.max(0).min(rod_transfer.max(0)))
+}
+
+/// One rod tick's warm-up (`EnergizingRodTile`'s `Ticker(20)`): `charging` is
+/// true while the orb has a recipe *and* the rod holds energy. The counter walks
+/// up to [`ROD_WARMUP`] and then stays there, which is upstream's behaviour: the
+/// warm-up delays the first fill by 20 ticks, it does not throttle later ones.
+#[must_use]
+pub fn rod_cooldown(charging: bool, cooldown: i32) -> i32 {
+    if charging {
+        (cooldown.max(0) + 1).min(ROD_WARMUP)
+    } else {
+        (cooldown - 1).max(0)
+    }
 }
 
 #[cfg(test)]
@@ -601,6 +830,231 @@ mod tests {
             network_moves(&battery, CABLE_TRANSFER, 0).is_empty(),
             "a battery cannot charge itself"
         );
+    }
+
+    #[test]
+    fn every_energizing_rod_tier_scales_upstreams_numbers() {
+        // `DefaultEnergies`: energizingTransfer = baseScaling * 100 and
+        // energizingCapacity = energizingTransfer * 100.
+        let expected = [
+            (10_000, 100),
+            (40_000, 400),
+            (100_000, 1_000),
+            (400_000, 4_000),
+            (1_000_000, 10_000),
+            (4_000_000, 40_000),
+            (20_000_000, 200_000),
+        ];
+        for (index, (capacity, transfer)) in expected.into_iter().enumerate() {
+            let tier = rod_tier(index).unwrap_or_else(|| panic!("tier {index} is on the ladder"));
+            assert_eq!(
+                (tier.capacity, tier.transfer),
+                (capacity, transfer),
+                "rod tier {index}'s numbers"
+            );
+        }
+        assert_eq!(
+            rod_tier(ROD_TIER_COUNT),
+            None,
+            "there is no eighth rod tier"
+        );
+    }
+
+    #[test]
+    fn every_energizing_recipe_is_the_jars_own_row() {
+        let by_output: Vec<(&str, i32, i32)> = energizing()
+            .iter()
+            .map(|recipe| (recipe.output, recipe.count, recipe.energy))
+            .collect();
+        assert_eq!(
+            by_output,
+            vec![
+                ("powah:steel_energized", 2, 10_000),
+                ("powah:crystal_blazing", 1, 120_000),
+                ("powah:crystal_blazing", 1, 120_000),
+                ("powah:crystal_niotic", 1, 300_000),
+                ("powah:crystal_spirited", 1, 1_000_000),
+                ("powah:crystal_nitro", 16, 20_000_000),
+            ],
+            "the jar's five materials, with its second blazing variant (one blaze rod)"
+        );
+        let nitro = energizing()
+            .iter()
+            .find(|recipe| recipe.output == "powah:crystal_nitro")
+            .expect("the nitro recipe");
+        assert_eq!(
+            nitro.ingredients.len(),
+            4,
+            "a nether star, two redstone blocks and a blazing crystal block"
+        );
+    }
+
+    #[test]
+    fn an_orb_matches_its_recipe_in_any_slot_order_and_nothing_else() {
+        let steel = energize(&["minecraft:iron_ingot", "minecraft:gold_ingot"])
+            .expect("iron and gold are the energized steel recipe");
+        assert_eq!(steel.output, "powah:steel_energized");
+        assert_eq!(
+            energize(&["minecraft:gold_ingot", "minecraft:iron_ingot"]),
+            Some(steel),
+            "the slots are a bag of ingredients, not a pattern"
+        );
+        assert_eq!(energize(&["minecraft:iron_ingot"]), None, "half a recipe");
+        assert_eq!(
+            energize(&["minecraft:iron_ingot", "minecraft:iron_ingot"]),
+            None,
+            "two of one, none of the other"
+        );
+        assert_eq!(
+            energize(&["minecraft:iron_ingot", "minecraft:diamond"]),
+            None,
+            "one wrong ingredient"
+        );
+        assert_eq!(energize(&[]), None, "an empty orb has no recipe");
+    }
+
+    #[test]
+    fn a_stack_of_blaze_powder_in_one_slot_is_one_filled_slot() {
+        // Upstream's input slots hold one item each, so four blaze powder are four
+        // slots; a single stack is one filled slot and matches one ingredient only.
+        assert_eq!(
+            energize(&["minecraft:blaze_powder"]),
+            None,
+            "one powder is a quarter of the blazing recipe"
+        );
+        let four = [
+            "minecraft:blaze_powder",
+            "minecraft:blaze_powder",
+            "minecraft:blaze_powder",
+            "minecraft:blaze_powder",
+        ];
+        assert_eq!(
+            energize(&four).map(|recipe| recipe.output),
+            Some("powah:crystal_blazing")
+        );
+        assert_eq!(
+            energize(&["minecraft:blaze_rod"]).map(|recipe| recipe.output),
+            Some("powah:crystal_blazing"),
+            "the jar's second blazing recipe takes one blaze rod"
+        );
+    }
+
+    #[test]
+    fn the_orb_holds_the_recipes_energy_clears_a_changed_recipe_and_produces_when_full() {
+        let steel = energizing()
+            .iter()
+            .find(|recipe| recipe.output == "powah:steel_energized")
+            .expect("the steel recipe");
+        let iron_gold = ["minecraft:iron_ingot", "minecraft:gold_ingot"];
+
+        assert_eq!(
+            orb_step(&iron_gold, 0, None),
+            OrbStep {
+                recipe: Some(steel),
+                energy: 0,
+                done: false
+            },
+            "a fresh orb holds the recipe and no energy"
+        );
+        assert_eq!(
+            orb_step(&iron_gold, 5_000, Some("powah:steel_energized")).energy,
+            5_000,
+            "a rod's fill stays in a buffer under the recipe's 10,000"
+        );
+        assert_eq!(
+            orb_step(&iron_gold, 5_000, None).energy,
+            5_000,
+            "energy a rod moved in before the orb recorded a recipe is adopted, not thrown away"
+        );
+        assert_eq!(
+            orb_step(&iron_gold, 10_000, Some("powah:steel_energized")),
+            OrbStep {
+                recipe: Some(steel),
+                energy: 0,
+                done: true
+            },
+            "at the recipe's energy the orb produces and empties"
+        );
+        assert_eq!(
+            orb_step(&iron_gold, 5_000, Some("powah:crystal_niotic")).energy,
+            0,
+            "a different recipe clears what the last one stored (onSlotChanged)"
+        );
+        assert!(
+            orb_step(
+                &["minecraft:diamond"],
+                400_000,
+                Some("powah:crystal_niotic")
+            )
+            .done,
+            "a buffer above the recipe's energy is done, not clamped back"
+        );
+        assert_eq!(
+            orb_step(&[], 5_000, None),
+            OrbStep {
+                recipe: None,
+                energy: 0,
+                done: false
+            },
+            "an orb with no recipe stores nothing"
+        );
+        assert_eq!(
+            orb_step(&["minecraft:diamond"], 0, None)
+                .recipe
+                .map(|recipe| recipe.output),
+            Some("powah:crystal_niotic"),
+            "one diamond is the niotic recipe"
+        );
+    }
+
+    #[test]
+    fn an_orb_takes_the_room_it_has_and_the_rod_gives_no_more_than_it_holds() {
+        assert_eq!(
+            orb_fill(200_000, 200_000, 0, 120_000),
+            120_000,
+            "a nitro rod offers 200,000 into 120,000 of room: the orb takes 120,000"
+        );
+        assert_eq!(
+            orb_fill(10_000, 100, 0, 10_000),
+            100,
+            "a starter rod gives its own 100 a tick"
+        );
+        assert_eq!(
+            orb_fill(50_000, 200_000, 119_950, 120_000),
+            50,
+            "the last 50 FE of the recipe"
+        );
+        assert_eq!(
+            orb_fill(0, 200_000, 0, 120_000),
+            0,
+            "an empty rod gives nothing"
+        );
+        assert_eq!(
+            orb_fill(10_000, 100, 10_000, 10_000),
+            0,
+            "a full orb has no room"
+        );
+        assert_eq!(orb_fill(-5, 100, 0, 10_000), 0);
+    }
+
+    #[test]
+    fn a_rod_warms_up_for_twenty_ticks_and_then_fills_every_tick() {
+        let mut cooldown = 0;
+        for tick in 1..=ROD_WARMUP {
+            cooldown = rod_cooldown(true, cooldown);
+            assert_eq!(cooldown, tick, "tick {tick} of the warm-up");
+        }
+        assert_eq!(
+            rod_cooldown(true, cooldown),
+            ROD_WARMUP,
+            "the warm-up holds at 20: upstream's Ticker.ended() stays true, so a warm rod fills every tick"
+        );
+        assert_eq!(
+            rod_cooldown(false, ROD_WARMUP),
+            ROD_WARMUP - 1,
+            "an idle rod cools"
+        );
+        assert_eq!(rod_cooldown(false, 0), 0, "and stops at zero");
     }
 
     #[test]
