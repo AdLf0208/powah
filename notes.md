@@ -260,8 +260,10 @@ round trip in this environment is ~2 s, far longer than a tick).
    FE block.
 10. **Crafting is not possible yet**: the recipes need later-slice items.
 11. **The other 6 tiers, the creative cell and ~15 machines** are unported. — the
-    **energy cell** tiers are closed by [`## Slice 4 — the energy cell ladder`](#slice-4--the-energy-cell-ladder-2026-11-21);
-    the furnator and cable tiers, the creative cell and the machines remain.
+    **energy cell** tiers are closed by [`## Slice 4 — the energy cell ladder`](#slice-4--the-energy-cell-ladder-2026-11-21)
+    and the **furnator and cable** tiers by [`## Slice 6 — the Furnator and Energy Cable tier
+    ladders`](#slice-6--the-furnator-and-energy-cable-tier-ladders-2026-11-21); the creative
+    cell and the machines remain (the reactors are `blocked(uraninite-worldgen)`).
 12. **`/powah set` is a harness control**, not upstream gameplay (same precedent
     as `/mekanism energy`).
 
@@ -1479,15 +1481,235 @@ Version: **0.2.4 → 0.2.5** (one patch). The published `[[versions]]` record ke
 
 Skills: superpowers/using-superpowers, brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion; BeautifulRust/rust-best-practices
 
+## Slice 6 — the Furnator and Energy Cable tier ladders (2026-11-21)
+
+### The slice, quoted from this port's own gaps
+
+`horizon-mod.toml` (0.2.5), the `description` the package ships:
+
+> Not yet ported: the other six
+> furnator and cable tiers, the creative cell, the generators, reactors, item
+> charging, side config, redstone modes and the GUIs.
+
+and `## Slice 4 — the energy cell ladder` §"The slice, quoted from this port's own gaps",
+which names the two ladders and why they were left:
+
+> the other six **furnator/cable** tiers are the same shape as this slice but their rule
+> is a rate into a buffer (a bound), not an exact readout.
+
+**Chosen:** the six remaining **Furnator** tiers (`basic`, `hardened`, `blazing`,
+`niotic`, `spirited`, `nitro`) and the six remaining **Energy Cable** tiers — the
+completion of the two ladders slice 1 opened, and the last families the package's own
+description listed before the machines it does not carry. **Why it fits `machines`:** a
+furnator is the shape the port already runs (one fuel slot, a declared block energy
+buffer, a tick that burns carbon into a buffer) with the tier's numbers; a cable tier is
+the relay the port already runs with a different rate and no connection across tiers. No
+new hook family, no renderer, no GUI, no entity, no worldgen.
+
+**Not chosen (and why):** the **reactors** need `powah:uraninite`, and every source of it
+is worldgen the port does not carry (`#c:ores/uraninite`) or an energizing recipe whose
+input is uraninite — so no reactor content is reachable in a 26.3 world; recorded
+`blocked(uraninite-worldgen)`. The generators (Magmator/Thermo/Solar) still need a mod
+block entity fluid tank the pin cannot fill and sky visibility, and the creative
+cell/ender gates/item charging/side config/GUIs remain slice 1's recorded gaps.
+
+### What it ships
+
+Rust:
+
+| File | Change |
+|---|---|
+| `src/runtime.rs` | `FurnatorTier { generation, capacity, transfer }` + `furnator_tier` (× 20 / × 20,000 / × 80), `CableTier { transfer }` + `cable_tier` (× 500); `Furnator::tick(tier)` takes the tier; 5 new tests |
+| `src/powah.rs` | `FURNATORS`/`CABLES` (seven ids + type names each), `furnator_of`/`cable_of`, `Kind::Furnator(tier)`/`Kind::Cable(tier)`, per-tier `furnator_battery`/read/set clamp/push cap, `FurnatorPart` carries its tier, the network walk joins one tier only, the furnator readout names its per-side transfer; 4 new tests |
+| `src/lib.rs` | one container + energy declaration and one burning block entity type per furnator tier, one idle type per cable tier (29 block entity types in all) |
+
+Content: see [`CONTENT.md`](CONTENT.md) §"Slice 6" — 12 blocks (6 furnators, 6 cables),
+their blockstates/models/item definitions/textures/loot, the jar's 6 furnator recipes and
+12 cable recipes (both of its paths per tier) with their advancements, the jar's
+`powah:furnators` / `powah:energy_cables` block and item tags, the pickaxe/needs-iron
+entries, the cable's visual-arm tag and the creative tab; `tools/carry_slice6.py`
+reproduces the 134 files from the raw carry and the jar (`--check` green).
+
+### The readouts this slice adds
+
+```text
+Furnator at 6,100,14: 40000000/40000000 FE (comparator 15, carbon 0, burning false, fuel empty, 160000 FE/t a side, t=1144)
+Furnator at 10,100,14: 40000000/40000000 FE (comparator 15, carbon 8000, burning true, fuel empty, 160000 FE/t a side, t=1187)
+Energy Cable at -4,100,16: no storage, moves up to 2000 FE/t (t=1276)
+Energy Cable at -6,100,16: no storage, moves up to 500 FE/t (t=1263)
+```
+
+The furnator line gained its per-side transfer (the cells gained theirs in slice 4), so a
+tier's declaration is readable in game and pinned by the e2e; the starter's line keeps
+its prefix, so every earlier assertion still matches.
+
+### TDD: the red proof, quoted
+
+`furnator_tier`, `cable_tier`, `furnator_of` and `cable_of` were declared with `todo!()`
+and the tests written against them, then run
+(`ports/_shared/evidence/powah/slice6-test-red.log`):
+
+```text
+---- runtime::tests::every_furnator_tier_scales_upstreams_numbers stdout ----
+thread 'runtime::tests::every_furnator_tier_scales_upstreams_numbers' panicked at src/runtime.rs:47:5:
+not yet implemented: the furnator tier ladder
+
+---- runtime::tests::every_cable_tier_scales_upstreams_numbers stdout ----
+thread 'runtime::tests::every_cable_tier_scales_upstreams_numbers' panicked at src/runtime.rs:65:5:
+not yet implemented: the energy cable tier ladder
+
+---- powah::tests::every_furnator_tier_is_one_of_the_ladder_with_its_own_buffer stdout ----
+thread 'powah::tests::every_furnator_tier_is_one_of_the_ladder_with_its_own_buffer' panicked at src/powah.rs:144:5:
+not yet implemented: the furnator block ids
+
+---- powah::tests::every_cable_tier_is_one_of_the_ladder_and_declares_no_buffer stdout ----
+thread 'powah::tests::every_cable_tier_is_one_of_the_ladder_and_declares_no_buffer' panicked at src/powah.rs:150:5:
+not yet implemented: the energy cable block ids
+
+test result: FAILED. 28 passed; 20 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+(The 20 include the existing tests that read a machine's kind or a furnator's compound
+through the new tier, which is the same missing table.) After the implementation:
+**48 passed, 0 failed** (`slice6-test-green.log`, the same 48 in `sdk-test.log`).
+
+### Ladder (0.2.6, pin `0a875da`)
+
+Every compile step ran in `ports/powah`, `CARGO_INCREMENTAL=0`, inside a
+`ports/tools/build-slot.sh run --job W1-powah --port ports/powah --step …` lease. Logs in
+`ports/_shared/evidence/powah/`.
+
+| Step | Command | Result |
+|---|---|---|
+| unit tests | `cargo test --offline` | **48 passed**, 0 failed (`sdk-test.log`) |
+| lints | `cargo clippy --all-targets --offline -- -D warnings` | exit 0, 0 warnings (`sdk-clippy.log`) |
+| formatting | `cargo fmt --all -- --check` | exit 0, empty (`sdk-fmt.log`) |
+| package, twice | `rm -f Cargo.lock; cargo horizon-mod build` ×2, `cmp` | **byte-identical, 293,821 B** (`sdk-build{,-second}.log`) |
+| registry check | `cargo horizon-mod check powah.hmod` | **exit 0**, `powah 0.2.6 (native-mod, format native-1/0a875da…/e59da90…, for 26.3)`, `293821 bytes, SHA-256 3ab1b5b46df0285f14f5d8fd47367e1cd053cbf96e671bfe8e3bb2eca30ed358, unsigned` (`sdk-check.log`) |
+| fits the pin | `cargo horizon-mod fits powah.hmod --build 0a875da` | `0a875da  made for`, exit 0 (`sdk-fits.log`) |
+| fits **another** build | `cargo horizon-mod fits powah.hmod --build 0b14f8a` | `0b14f8a  fits`, exit 0 (`sdk-fits-nightly.log`) |
+| package gate | `python3 ports/tools/verify-sdk-package.py powah` | **1/1**, runtime byte-identical (`b076ea834d71`), no packed `Cargo.lock`, **422 entries** (`sdk-verify.log`) |
+| carried-data dialect | `python3 ports/tools/check_261_dialect.py powah.hmod` | exit 0: 132 recipe/loot files, every one in the 26.3 dialect, every `requires_tool` block in a mineable tag |
+
+In-game legs (launcher build `native-0a875da-9952c6153ae1`, `Compiling powah (1 of 1)` in
+`evidence/powah-e2e/launcher-build-0.2.6.log`; logs in
+`ports/_shared/evidence/powah-e2e/`):
+
+| Leg | Command | Result |
+|---|---|---|
+| main | `launcher-game.sh build powah` + `build-slot.sh run --step e2e` | **PASS** + `EXIT:0` (`e2e-launcher.log`) |
+| control (whole scenario, no package) | `GAME=$CONTROL_GAME …` | `FAIL: expected powah:furnator_starter at 0,100,0, got 'minecraft:air'` + `EXIT:1` (`e2e-control.log`) |
+| control (ids), inside the main run | the control leg | `Unknown block type 'powah:furnator_nitro'`, `'powah:energy_cable_nitro'`, and the slice-5 ids |
+| selftest (slice 1's flip, re-run on this package) | `SELFTEST=1 …` | `FAIL: SELFTEST flipped: the unfuelled furnator made no FE, as it should` + `EXIT:1` (`e2e-selftest.log`) |
+| selftest (this slice's clamp) | `SELFTEST=furnator …` | `FAIL: expected powah:furnator_nitro to hold 20000/20000 FE, got 'Furnator at 6,100,14: 40000000/40000000 FE …'` + `EXIT:1` (`e2e-selftest-furnator.log`) |
+| selftest (this slice's rate) | `SELFTEST=furnator-rate …` | `FAIL: expected 8000 carbon left after one 40,000 tick of a 48,000 coal, got 47980: Furnator at 10,100,14: 40000000/40000000 FE (… carbon 8000 …)` + `EXIT:1` (`e2e-selftest-furnator-rate.log`) |
+| log gate | `check-e2e-logs.py powah-e2e --strict` | `logs=14 ok=14`, exit 0 |
+
+Quoted from `e2e-launcher.log` (one command per tier; every tier clamps at its own
+capacity and names its own per-side transfer):
+
+```text
+== slice 6: every furnator tier holds its own capacity ==
+  info(-6,100,14): Furnator at -6,100,14: 20000/20000 FE (comparator 15, carbon 0, burning false, fuel empty, 80 FE/t a side, t=1032)
+  info(-4,100,14): Furnator at -4,100,14: 80000/80000 FE (comparator 15, carbon 0, burning false, fuel empty, 320 FE/t a side, t=1049)
+  info(-2,100,14): Furnator at -2,100,14: 200000/200000 FE (comparator 15, carbon 0, burning false, fuel empty, 800 FE/t a side, t=1067)
+  info(0,100,14): Furnator at 0,100,14: 800000/800000 FE (comparator 15, carbon 0, burning false, fuel empty, 3200 FE/t a side, t=1084)
+  info(2,100,14): Furnator at 2,100,14: 2000000/2000000 FE (comparator 15, carbon 0, burning false, fuel empty, 8000 FE/t a side, t=1102)
+  info(4,100,14): Furnator at 4,100,14: 8000000/8000000 FE (comparator 15, carbon 0, burning false, fuel empty, 32000 FE/t a side, t=1123)
+  info(6,100,14): Furnator at 6,100,14: 40000000/40000000 FE (comparator 15, carbon 0, burning false, fuel empty, 160000 FE/t a side, t=1144)
+== slice 6: a nitro furnator makes its own 40,000 FE a tick ==
+  set(10,100,14) = Furnator at 10,100,14: 39960000/40000000 FE (comparator 14, carbon 0, burning false, fuel empty, 160000 FE/t a side, t=1158)
+  item replace block(10,100,14) container.0 <- minecraft:coal x1
+  nitro: Furnator at 10,100,14: 40000000/40000000 FE (comparator 15, carbon 8000, burning true, fuel empty, 160000 FE/t a side, t=1187)
+== slice 6: a starter furnator fills its own buffer at its own rate ==
+  starter: Furnator at 12,100,14: 860/20000 FE (comparator 0, carbon 47140, burning true, fuel empty, 80 FE/t a side, t=1250)
+== slice 6: every energy cable tier carries its own rate ==
+  info(-6,100,16): Energy Cable at -6,100,16: no storage, moves up to 500 FE/t (t=1263)
+  info(-4,100,16): Energy Cable at -4,100,16: no storage, moves up to 2000 FE/t (t=1276)
+  info(-2,100,16): Energy Cable at -2,100,16: no storage, moves up to 5000 FE/t (t=1290)
+  info(0,100,16): Energy Cable at 0,100,16: no storage, moves up to 20000 FE/t (t=1304)
+  info(2,100,16): Energy Cable at 2,100,16: no storage, moves up to 50000 FE/t (t=1317)
+  info(4,100,16): Energy Cable at 4,100,16: no storage, moves up to 200000 FE/t (t=1330)
+  info(6,100,16): Energy Cable at 6,100,16: no storage, moves up to 1000000 FE/t (t=1343)
+== slice 6: a cable network joins its own tier and no other ==
+  behind the starter cable: Energy Cell at 3,100,18: 0/1000000 FE (comparator 0, 1000 FE/t a side, t=1445)
+  with the basic cable: Energy Cell at 3,100,18: 1000/1000000 FE (comparator 0, 1000 FE/t a side, t=1469)
+```
+
+The rate assertion is exact, not a bound: the buffer is left exactly **40,000** of room
+(`/powah set 39960000`) and one coal is 48,000 carbon, so one nitro tick fills the room and
+leaves **exactly 8,000** carbon — a 20 FE/t tick would leave 47,980 and the buffer would
+still be 20 short. The starter's line is the conservation counterpart: `860 + 47,140 =
+48,000` — every FE in the buffer came out of the carbon, and the starter tier has not
+finished the coal in 42 ticks. The cable's cross-tier phase is fail-capable both ways: the
+sink is **0** while a starter cable sits between two basic ones, and **1,000** once that
+cable is basic.
+
+### Coverage (parity rule, the family this slice adds)
+
+| Family (from the jar) | Status |
+|---|---|
+| `furnator_{basic,hardened,blazing,niotic,spirited,nitro}` block + item | **tested** — each placed, `/powah set 2000000000` clamps at its own capacity (80k…40M) and the readout names its per-side transfer (320…160,000 FE/t); each mined in survival, drops itself |
+| the six new furnator recipes | **tested** — crafted in a real table: output id + count, every ingredient consumed (`craft_check.py`) |
+| a tier's generation | **tested** — the nitro tier's exact 40,000 FE tick (carbon 48,000 → 8,000 with exactly 40,000 of room) and the starter tier's 840 FE in 42 ticks with `energy + carbon = 48,000` |
+| `energy_cable_{basic,hardened,blazing,niotic,spirited,nitro}` block + item | **tested** — each placed and `/powah info` reads back its own rate (2,000…1,000,000 FE/t); each mined in survival, drops itself |
+| the cable network's tier rule (`CableNet`: different tiers never connect) | **tested** — a cell behind a starter cable on a basic run stays at 0; replacing that cable with a basic one delivers 1,000 FE |
+| both of the jar's cable recipes per tier (12) | **tested** — crafted in a real table: 6-cable upgrade path and 12-cable alternate, output id + count, every ingredient consumed; the nitro cable's shape with a stick in place of its capacitor crafts nothing |
+| `powah:furnators` / `powah:energy_cables` block + item tags | **tested** — carried from the jar, validated by `cargo horizon-mod check`; the e2e gives, places and mines every member |
+| the creative tab (47 items) | **not asserted in game** — no `ctl` command reads a tab; `check` validates it and every id is giveable/placeable |
+| reactors (`uraninite`) | **blocked(uraninite-worldgen)** — `powah:uraninite` has no source: its ore tag `#c:ores/uraninite` is worldgen this port does not carry, and its energizing recipe takes uraninite itself, so no reactor recipe can be reached |
+| generators (Magmator/Thermo/Solar), creative cell, ender gates, item charging, side config, redstone modes, GUIs | **not ported** — slice 1's recorded gaps 1–9, 11 |
+
+### Deviations slice 6 adds
+
+1. **The furnator readout gained its per-side transfer** so the declared rate is readable
+   in game (the cells' line gained theirs in slice 4). The starter's prefix is unchanged.
+2. **`needs_iron_tool` gains the twelve new blocks.** Upstream's own file is only
+   `#c:ores/uraninite`; the port's starter machines were already in it (slice 1), so the
+   tiers follow their starter rather than upstream's tag.
+3. **The cable's visual-arm tag gains the new furnators and cables.** Upstream joins any
+   FE block; a content tag can only name blocks, and the higher cell tiers were not added
+   in slice 4 either — their arms stay unrendered, a visual gap only.
+4. **A cable network still spends one cable's rate, not one per cable** (slice 3's
+   deviation). Upstream's `CableNet` forwards one insertion through the run; the port
+   plans the whole network with the tier's single rate.
+
+**Upstream defects fixed:** none found — the tier tables are internally consistent with
+`DefaultEnergies`, and the "different tiers never connect" rule is the artefact's own. The
+only defect found while measuring was in **this port's harness**: the slice-1 discharge
+phase asserts a *source* cell that oscillates (0/1000 with its sink every two ticks) by
+reading it eight times; one run read the same stale `t=662` line eight times after a
+dropped chat reply and failed a phase this slice did not touch. The main leg and both
+selftests passed it on re-run; the phase is left as it is (its own log is unchanged) and
+this is recorded as a known harness flake, not a mod defect.
+
+### Pin findings this slice measured (for the next port)
+
+1. **A tier clamp is read with the same command as another tier's** — the furnator's
+   `capacity` comes straight from `generatorCapacity`, so `/powah set 2000000000` on
+   seven blocks gives seven exact readouts in one phase.
+2. **A rate is provable in game when the buffer is given exactly the rate's room.** A
+   chat round trip (~40 ticks) is far longer than a nitro tick, so a rate cannot be
+   measured by Δenergy/Δt; leave room = generation and read the carbon the one tick took.
+3. **`/powah set` on a furnator that then burns cannot be polled for the set value** —
+   the burn starts the same tick; read the post-burn line instead (the carbon field).
+4. **A cross-tier cable row is a clean control**: the sink is exactly 0 until the tier
+   matches, so the join rule is assertable with one `info`.
+
+Version: **0.2.5 → 0.2.6** (one patch). The published `[[versions]]` record keeps 0.2.5
+and gains 0.2.6 at publish time — this port does not touch the registry entry.
+
+Skills: superpowers/using-superpowers, brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion; BeautifulRust/rust-best-practices
+
 ### Coverage table in the checker's shape (`check-coverage.py`)
 
 | Family | Status | Evidence |
 |---|---|---|
-| `block` | tested | every block placed and read back, from the three slice-1 machines to the seven cell tiers, the energizing orb, the seven rods and the blazing crystal block, and their loot |
-| `item` | tested | every item given and counted; the machines' items placed |
-| `block_entity` | tested | the furnator burns and its buffer fills; a cell holds its tier's capacity; the cable relays across a run; the orb holds seven slots and a recipe-gated buffer, and a rod fills it exactly (energy only moves through the block entities' ticks) |
-| `loot_table` | tested | every machine, cell, orb, rod and material block mined in survival in the loot leg and asserted to drop itself |
-| `recipe:minecraft:crafting_shaped` | tested | `craft_check.py` crafts each of the 25 shaped recipes in a real table (the five previously blocked cells included): output id + count, ingredients consumed |
+| `block` | tested | every block placed and read back, from the three slice-1 machines to the seven furnator tiers, the seven cell tiers, the seven cable tiers, the energizing orb, the seven rods and the blazing crystal block, and their loot |
+| `item` | tested | every item given and counted; the machines', cables' and furnators' items placed |
+| `block_entity` | tested | each furnator tier burns at its own generation into its own capacity (the nitro tier's exact 40,000 tick); a cell holds its tier's capacity; each cable tier relays at its own rate and a network joins one tier only; the orb holds seven slots and a recipe-gated buffer, and a rod fills it exactly (energy only moves through the block entities' ticks) |
+| `loot_table` | tested | every machine, furnator tier, cell, cable tier, orb, rod and material block mined in survival in the loot leg and asserted to drop itself |
+| `recipe:minecraft:crafting_shaped` | tested | `craft_check.py` crafts each of the 43 shaped recipes in a real table (the five previously blocked cells, the six furnator tiers and the twelve cable recipes included): output id + count, ingredients consumed |
 | `recipe:minecraft:crafting_shapeless` | tested | same leg, 8 cases; the paste's lava bucket leaves its bucket, and the material block and its 9-back recipe both work |
-| `tag:item` | tested | `powah:energizing_rods` names the seven rods (the jar's own tag); the e2e gives, places, crafts and mines each of those ids, and `cargo horizon-mod check` validates the tag |
-| `tag:block` | tested | the cable's `powah:energy_cable_connects` is the visual-arms tag (the relay is the mechanic and the three-cable run is asserted); the pickaxe/needs-iron tags are what makes the loot leg's drops real |
+| `tag:item` | tested | `powah:energizing_rods`, `powah:furnators` and `powah:energy_cables` name their seven members (the jar's own tags); the e2e gives, places, crafts and mines each of those ids, and `cargo horizon-mod check` validates the tags |
+| `tag:block` | tested | the cable's `powah:energy_cable_connects` is the visual-arms tag (the relay is the mechanic and the three-cable run plus the cross-tier control are asserted); the pickaxe/needs-iron tags are what makes the loot leg's drops real |

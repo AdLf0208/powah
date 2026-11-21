@@ -1,0 +1,65 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_capacitor_hardened": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:capacitor_hardened"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_dielectric_casing": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:dielectric_casing"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_furnator_basic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:furnator_basic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_steel_energized": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:steel_energized"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "powah:crafting/furnator_hardened"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_capacitor_hardened",
+      "has_steel_energized",
+      "has_furnator_basic",
+      "has_dielectric_casing"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "powah:crafting/furnator_hardened"
+    ]
+  }
+}

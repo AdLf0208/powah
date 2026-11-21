@@ -1,0 +1,18 @@
+{
+  "category": "misc",
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "c": "powah:capacitor_hardened",
+    "d": "powah:dielectric_rod_horizontal",
+    "k": "powah:steel_energized"
+  },
+  "pattern": [
+    "ddd",
+    "kck",
+    "ddd"
+  ],
+  "result": {
+    "count": 12,
+    "id": "powah:energy_cable_hardened"
+  }
+}

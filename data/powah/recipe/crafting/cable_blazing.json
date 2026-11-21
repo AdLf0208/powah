@@ -1,0 +1,18 @@
+{
+  "category": "misc",
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "c": "powah:capacitor_blazing",
+    "d": "powah:dielectric_rod_horizontal",
+    "t": "powah:energy_cable_hardened"
+  },
+  "pattern": [
+    "ddd",
+    "tct",
+    "ddd"
+  ],
+  "result": {
+    "count": 6,
+    "id": "powah:energy_cable_blazing"
+  }
+}

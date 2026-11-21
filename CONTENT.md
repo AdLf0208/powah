@@ -120,6 +120,30 @@ Two patches, both from the pin's loader and recorded in `notes.md`:
 `tools/carry_slice5.py` (in the port root) reproduces this slice's 160 files from the raw carry
 and `--check` verifies the tree still matches; **no asset or model is invented**.
 
+## Slice 6 — the Furnator and Energy Cable ladders (2026-11-21)
+
+The two ladders slice 1 opened, completed: six more furnators and six more cables, with
+the jar's own recipes for each tier.
+
+| Family | Files |
+|---|---|
+| blocks (12) | `data/powah/horizon/block/{furnator,energy_cable}_{basic,hardened,blazing,niotic,spirited,nitro}.json` — a furnator is the starter's `minecraft:furnace` definition (horizontal `facing`, 2.0/20.0 metal, `occludes: false`, stack 1) and a cable is the starter's `minecraft:chorus_plant` relay (`connects_to`, `thickness: 4.0`, empty collision); a tier differs from the starter only in its id |
+| blockstates (12) | `assets/powah/blockstates/…` — the cables carried; a furnator's is the package's own starter blockstate with its model renamed (the carry's still names `lollipop:block/empty` and has no `lit` variant) |
+| block models (18) | `assets/powah/models/block/…` — six furnators on the shared `powah:block/furnator` parent with their `<tier>_ov` texture, six cables and their six multipart arms |
+| item models (12) + item definitions (12) | `assets/powah/models/item/…`, `assets/powah/items/…` |
+| textures (12) | six `<tier>_ov.png` (the furnator body is shared) and six `energy_cable_<tier>.png` |
+| loot tables (12) | `data/powah/loot_table/blocks/…` (the jar's 26.3 shape) |
+| recipes (18) + advancements (18) | the six `furnator_<tier>` recipes from the carry, and **both** of the jar's cable recipes per tier (`cable_<tier>` upgrading the previous cable, `cable_<tier>_2` from the tier's material) — the carry had skipped the cable recipe files with the block |
+| tags | the jar's `powah:furnators` and `powah:energy_cables` block and item tags; the twelve join `minecraft:mineable/pickaxe` and `minecraft:needs_iron_tool` and `powah:energy_cable_connects` |
+| creative tab | the twelve join `data/powah/horizon/creative_tab/machines.json` (47 items) |
+| lang | unchanged: the carry's `en_us.json` already has `block.powah.furnator_<tier>` and `block.powah.energy_cable_<tier>` |
+
+`tools/carry_slice6.py` reproduces this slice's 134 files from the raw carry and the jar
+(the six cable recipes and their advancements are read from `Powah-6.2.10.jar` itself) and
+`--check` verifies the tree still matches; **no asset or model is invented**. The two
+patches are the ones every slice applies: the horizon block definition is the package's own
+starter shape, and a recipe's ingredients are the pin's bare-string form.
+
 ## Where this content lives now (0.2.0)
 
 Since the SDK migration the carried tree **is the package root**: `assets/powah/` and

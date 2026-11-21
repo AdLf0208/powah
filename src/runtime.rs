@@ -27,6 +27,64 @@ pub const CABLE_TRANSFER: i32 = 500;
 /// starter, basic, hardened, blazing, niotic, spirited, nitro.
 pub const CELL_TIER_COUNT: usize = 7;
 
+/// The tiers a furnator has, in `Tier.getNormalVariants` order: starter, basic,
+/// hardened, blazing, niotic, spirited, nitro.
+pub const FURNATOR_TIER_COUNT: usize = 7;
+
+/// One furnator tier's numbers: `activeProduction` (its generation while
+/// burning), `generatorCapacity` and `generatorTransfer` at that tier
+/// (`config/v2/DefaultEnergies`, derived from `baseScaling`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FurnatorTier {
+    pub generation: i32,
+    pub capacity: i32,
+    pub transfer: i32,
+}
+
+/// The furnator tier at `index` (0 = starter … 6 = nitro), `None` past the ladder.
+#[must_use]
+pub fn furnator_tier(index: usize) -> Option<FurnatorTier> {
+    /// `DefaultEnergies.baseScaling`, in `Tier.getNormalVariants` order.
+    const BASE_SCALING: [i32; FURNATOR_TIER_COUNT] = [1, 4, 10, 40, 100, 400, 2_000];
+    /// `activeProduction` = `baseScaling * 20`.
+    const GENERATION_PER_SCALING: i32 = 20;
+    /// `generatorCapacity` = `activeProduction * 1000`.
+    const CAPACITY_PER_SCALING: i32 = 20_000;
+    /// `generatorTransfer` = `activeProduction * 4`.
+    const TRANSFER_PER_SCALING: i32 = 80;
+    let scaling = *BASE_SCALING.get(index)?;
+    Some(FurnatorTier {
+        generation: scaling * GENERATION_PER_SCALING,
+        capacity: scaling * CAPACITY_PER_SCALING,
+        transfer: scaling * TRANSFER_PER_SCALING,
+    })
+}
+
+/// The tiers an energy cable has, in `Tier.getNormalVariants` order: starter,
+/// basic, hardened, blazing, niotic, spirited, nitro.
+pub const CABLE_TIER_COUNT: usize = 7;
+
+/// One energy cable tier's rate: `cableTransfer` at that tier
+/// (`config/v2/DefaultEnergies`, `baseScaling * 500`). A cable stores nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CableTier {
+    pub transfer: i32,
+}
+
+/// The energy cable tier at `index` (0 = starter … 6 = nitro), `None` past the
+/// ladder.
+#[must_use]
+pub fn cable_tier(index: usize) -> Option<CableTier> {
+    /// `DefaultEnergies.baseScaling`, in `Tier.getNormalVariants` order.
+    const BASE_SCALING: [i32; CABLE_TIER_COUNT] = [1, 4, 10, 40, 100, 400, 2_000];
+    /// `cableTransfer` = `reactorProduction * 2` = `baseScaling * 250 * 2`.
+    const TRANSFER_PER_SCALING: i32 = 500;
+    let scaling = *BASE_SCALING.get(index)?;
+    Some(CableTier {
+        transfer: scaling * TRANSFER_PER_SCALING,
+    })
+}
+
 /// How far from an orb a rod may stand (`PowahConfig.general.energizing_range`),
 /// in blocks, Chebyshev distance like upstream's `BlockPos.betweenClosed`.
 pub const ENERGIZING_RANGE: i32 = 4;
@@ -135,12 +193,12 @@ impl Furnator {
         true
     }
 
-    /// One server tick: produce `min(space, generation, carbon)`. Returns the
-    /// FE stored (0 when the buffer is full or nothing is burning). A full
-    /// buffer does not drain carbon.
-    pub fn tick(&mut self) -> i32 {
-        let space = (FURNATOR_CAPACITY - self.energy).max(0);
-        let produced = space.min(FURNATOR_GENERATION).min(self.carbon.max(0));
+    /// One server tick: produce `min(space, generation, carbon)` at this tier.
+    /// Returns the FE stored (0 when the buffer is full or nothing is burning). A
+    /// full buffer does not drain carbon.
+    pub fn tick(&mut self, tier: FurnatorTier) -> i32 {
+        let space = (tier.capacity - self.energy).max(0);
+        let produced = space.min(tier.generation).min(self.carbon.max(0));
         if produced > 0 {
             self.energy += produced;
             self.carbon -= produced;
@@ -507,6 +565,95 @@ mod tests {
         [None; 6]
     }
 
+    /// The starter tier, the one slice 1's numbers are (`FURNATOR_*`).
+    fn starter_furnator() -> FurnatorTier {
+        furnator_tier(0).expect("the starter tier is the first of the ladder")
+    }
+
+    #[test]
+    fn every_furnator_tier_scales_upstreams_numbers() {
+        // `DefaultEnergies`: activeProduction = baseScaling * 20,
+        // generatorCapacity = activeProduction * 1000,
+        // generatorTransfer = activeProduction * 4.
+        let expected = [
+            (20, 20_000, 80),
+            (80, 80_000, 320),
+            (200, 200_000, 800),
+            (800, 800_000, 3_200),
+            (2_000, 2_000_000, 8_000),
+            (8_000, 8_000_000, 32_000),
+            (40_000, 40_000_000, 160_000),
+        ];
+        for (index, (generation, capacity, transfer)) in expected.into_iter().enumerate() {
+            let tier =
+                furnator_tier(index).unwrap_or_else(|| panic!("tier {index} is on the ladder"));
+            assert_eq!(
+                (tier.generation, tier.capacity, tier.transfer),
+                (generation, capacity, transfer),
+                "furnator tier {index}'s numbers"
+            );
+        }
+        assert_eq!(
+            furnator_tier(FURNATOR_TIER_COUNT),
+            None,
+            "there is no eighth furnator tier"
+        );
+    }
+
+    #[test]
+    fn the_starter_furnator_keeps_slice_1_s_numbers() {
+        assert_eq!(
+            (FURNATOR_GENERATION, FURNATOR_CAPACITY, FURNATOR_TRANSFER),
+            (20, 20_000, 80),
+            "slice 1's constants are the starter tier's row"
+        );
+        let starter = starter_furnator();
+        assert_eq!(
+            (starter.generation, starter.capacity, starter.transfer),
+            (FURNATOR_GENERATION, FURNATOR_CAPACITY, FURNATOR_TRANSFER)
+        );
+    }
+
+    #[test]
+    fn every_cable_tier_scales_upstreams_numbers() {
+        // `DefaultEnergies`: cableTransfer = reactorProduction * 2 = baseScaling * 500.
+        let expected = [500, 2_000, 5_000, 20_000, 50_000, 200_000, 1_000_000];
+        for (index, transfer) in expected.into_iter().enumerate() {
+            let tier = cable_tier(index).unwrap_or_else(|| panic!("tier {index} is on the ladder"));
+            assert_eq!(tier.transfer, transfer, "cable tier {index}'s rate");
+        }
+        assert_eq!(
+            cable_tier(CABLE_TIER_COUNT),
+            None,
+            "there is no eighth cable tier"
+        );
+        assert_eq!(
+            cable_tier(0).expect("the starter cable").transfer,
+            CABLE_TRANSFER,
+            "slice 1's cable rate is the starter tier's row"
+        );
+    }
+
+    #[test]
+    fn a_nitro_furnator_burns_one_coal_in_two_ticks() {
+        let nitro = furnator_tier(6).expect("the nitro tier");
+        let mut furnator = Furnator::new();
+        assert!(furnator.load_fuel(1_600), "one coal is 48,000 carbon");
+        assert_eq!(furnator.carbon, 48_000);
+        assert_eq!(
+            furnator.tick(nitro),
+            40_000,
+            "the nitro tier generates its own 40,000 in one tick"
+        );
+        assert_eq!(
+            furnator.carbon, 8_000,
+            "and takes exactly that off the carbon"
+        );
+        assert_eq!(furnator.tick(nitro), 8_000, "the rest of the coal");
+        assert_eq!(furnator.carbon, 0);
+        assert_eq!(furnator.tick(nitro), 0, "one coal is spent in two ticks");
+    }
+
     #[test]
     fn every_energy_cell_tier_scales_upstreams_battery_numbers() {
         // `DefaultEnergies`: baseScaling = 1, 4, 10, 40, 100, 400, 2000;
@@ -572,7 +719,7 @@ mod tests {
     #[test]
     fn a_furnator_with_no_fuel_makes_nothing() {
         let mut furnator = Furnator::new();
-        assert_eq!(furnator.tick(), 0);
+        assert_eq!(furnator.tick(starter_furnator()), 0);
         assert_eq!(furnator.energy, 0);
         assert!(!furnator.burning());
     }
@@ -582,7 +729,7 @@ mod tests {
         let mut furnator = Furnator::new();
         assert!(furnator.load_fuel(1_600));
         assert_eq!(furnator.carbon, 48_000);
-        assert_eq!(furnator.tick(), FURNATOR_GENERATION);
+        assert_eq!(furnator.tick(starter_furnator()), FURNATOR_GENERATION);
         assert_eq!(furnator.energy, 20);
         assert_eq!(furnator.carbon, 47_980);
     }
@@ -595,7 +742,7 @@ mod tests {
         while furnator.burning() {
             // A cell next to it keeps taking the energy, so the buffer never fills.
             furnator.energy = 0;
-            assert_eq!(furnator.tick(), FURNATOR_GENERATION);
+            assert_eq!(furnator.tick(starter_furnator()), FURNATOR_GENERATION);
             ticks += 1;
         }
         assert_eq!(ticks, 2_400, "48,000 carbon at 20 FE/t");
@@ -608,7 +755,7 @@ mod tests {
             energy: FURNATOR_CAPACITY,
             carbon: 100,
         };
-        assert_eq!(furnator.tick(), 0);
+        assert_eq!(furnator.tick(starter_furnator()), 0);
         assert_eq!(furnator.carbon, 100);
         assert_eq!(furnator.energy, FURNATOR_CAPACITY);
 
@@ -616,7 +763,7 @@ mod tests {
             energy: FURNATOR_CAPACITY - 5,
             carbon: 100,
         };
-        assert_eq!(nearly.tick(), 5);
+        assert_eq!(nearly.tick(starter_furnator()), 5);
         assert_eq!(nearly.energy, FURNATOR_CAPACITY);
         assert_eq!(
             nearly.carbon, 95,
@@ -642,7 +789,11 @@ mod tests {
         assert!(full.wants_fuel(), "a full buffer still takes the next fuel");
         assert!(full.load_fuel(1_600));
         assert_eq!(full.carbon, 48_000);
-        assert_eq!(full.tick(), 0, "no room, so nothing is produced");
+        assert_eq!(
+            full.tick(starter_furnator()),
+            0,
+            "no room, so nothing is produced"
+        );
         assert_eq!(full.carbon, 48_000, "and no carbon is burnt");
     }
 

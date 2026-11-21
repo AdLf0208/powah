@@ -54,6 +54,22 @@
 # fail. SELFTEST=network expects the three-cable run to have delivered nothing
 # (it must FAIL), proving the network assertion can fail.
 #
+# Slice 6 (the other six furnator and cable tiers) adds:
+#  - all seven furnator tiers placed and set to 2,000,000,000 FE: each clamps at
+#    its own generation capacity (20k/80k/200k/800k/2M/8M/40M) and names its own
+#    per-side transfer;
+#  - a nitro furnator whose buffer is left exactly 40,000 of room burns one coal
+#    in one tick: 40,000,000 FE and 8,000 carbon left (a starter-rate tick would
+#    leave 47,980), and a starter furnator fed the same coal keeps
+#    energy + carbon = 48,000 while it fills slowly;
+#  - all seven cable tiers read back their own rate (500/2,000/5,000/20,000/
+#    50,000/200,000/1,000,000 FE/t);
+#  - a basic cable network does not join a starter cable: a cell behind the
+#    starter cable stays empty until that cable is replaced by a basic one.
+# SELFTEST=furnator expects the nitro furnator to clamp at the starter's 20,000
+# (it must FAIL) and SELFTEST=furnator-rate expects its carbon to be the starter
+# rate's 47,980 (it must FAIL), proving each exact assertion can fail.
+#
 # Slice 5 (the five cell recipes' `blocked(energizing-orb)` gate) adds the
 # Energizing Orb, its seven rods and the five materials they make:
 #  - a starter rod beside an orb holding iron and gold fills it to exactly its
@@ -405,6 +421,19 @@ control_leg() {
         *"Unknown item"*|*"unknown item"*|*"error"*|*"not found"*) ;;
         *) fail "the control game knew powah:crystal_blazing, so the content did not come from this package" ;;
     esac
+    # Slice 6: a furnator and a cable tier this slice adds are unknown too.
+    tier_block=$(ctl command "setblock 5 100 1 powah:furnator_nitro")
+    echo "  furnator tier setblock reply: $tier_block"
+    case "$tier_block" in
+        *"Unknown block"*|*"unknown block"*|*"error"*) ;;
+        *) fail "the control game knew powah:furnator_nitro, so the content did not come from this package" ;;
+    esac
+    tier_cable=$(ctl command "setblock 5 100 2 powah:energy_cable_nitro")
+    echo "  cable tier setblock reply: $tier_cable"
+    case "$tier_cable" in
+        *"Unknown block"*|*"unknown block"*|*"error"*) ;;
+        *) fail "the control game knew powah:energy_cable_nitro, so the content did not come from this package" ;;
+    esac
     name=$(ctl block 4 100 0 | jq -r '.name // .block // "unknown"')
     [ "$name" = "minecraft:air" ] || fail "the control game holds $name, so the block id was known"
     echo "  without the package: no block, no item (block 4,100,0 = $name)"
@@ -643,6 +672,118 @@ echo "  pair sink:   $pair_sink"
 ctl command "setblock 16 100 16 minecraft:air" >/dev/null
 ctl wait 4
 
+echo "== slice 6: every furnator tier holds its own capacity =="
+# One command against every tier (`/powah set 2000000000 <pos>`): a furnator
+# clamps what it is given at its own tier's generation capacity, so the same
+# command reads back a different exact number per tier (`DefaultEnergies`:
+# generatorCapacity = baseScaling x 20,000).
+tier_furnator() { # X ID CAPACITY TRANSFER
+    place "$1" 100 14 "$2"
+    set_clamped "$1" 100 14 2000000000 "$3"
+    local line expect=$3
+    line=$(info "$1" 100 14)
+    # SELFTEST=furnator flips the nitro tier's expectation to the starter's
+    # 20,000; the readout still says 40,000,000, so the assertion must fail there.
+    if [ "$SELFTEST" = furnator ] && [ "$2" = powah:furnator_nitro ]; then
+        expect=20000
+        echo "  SELFTEST: expecting the nitro furnator to clamp at the starter's $expect (this must fail)"
+    fi
+    echo "  info($1,100,14): $line"
+    case "$line" in
+        *"$expect/$expect FE"*) ;;
+        *) fail "expected $2 to hold $expect/$expect FE, got '$line'" ;;
+    esac
+    case "$line" in
+        *"$4 FE/t a side"*) ;;
+        *) fail "expected $2 to declare $4 FE/t a side, got '$line'" ;;
+    esac
+}
+tier_furnator -6 powah:furnator_starter 20000 80
+tier_furnator -4 powah:furnator_basic 80000 320
+tier_furnator -2 powah:furnator_hardened 200000 800
+tier_furnator 0 powah:furnator_blazing 800000 3200
+tier_furnator 2 powah:furnator_niotic 2000000 8000
+tier_furnator 4 powah:furnator_spirited 8000000 32000
+tier_furnator 6 powah:furnator_nitro 40000000 160000
+
+echo "== slice 6: a nitro furnator makes its own 40,000 FE a tick =="
+# Two exact numbers, not a bound: the buffer is set to leave exactly 40,000 of
+# room, and one coal is 48,000 carbon. One nitro tick fills that room and takes
+# exactly 40,000 off the carbon, so 8,000 is left; a starter-rate tick (20) would
+# leave 47,980 and the buffer would still be 20 FE from full.
+place 10 100 14 powah:furnator_nitro
+set_clamped 10 100 14 39960000 39960000
+put_fuel 10 100 14 minecraft:coal 1
+ctl wait 20
+nitro_line=$(info 10 100 14)
+echo "  nitro: $nitro_line"
+[ "$(energy_of "$nitro_line")" = 40000000 ] ||
+    fail "the nitro furnator did not fill its 40,000 of room: $nitro_line"
+nitro_carbon=$(carbon_of "$nitro_line")
+if [ "$SELFTEST" = furnator-rate ]; then
+    nitro_carbon=47980
+    echo "  SELFTEST: expecting the starter rate's 47980 carbon (this must fail)"
+fi
+[ "$nitro_carbon" = 8000 ] ||
+    fail "expected 8000 carbon left after one 40,000 tick of a 48,000 coal, got $nitro_carbon: $nitro_line"
+
+echo "== slice 6: a starter furnator fills its own buffer at its own rate =="
+# One coal is 48,000 FE in all: whatever the buffer holds came out of the
+# carbon, so energy + carbon = 48,000 exactly, and after a few dozen ticks the
+# starter tier has not finished it (the nitro tier had, in one tick).
+place 12 100 14 powah:furnator_starter
+set_clamped 12 100 14 0 0
+put_fuel 12 100 14 minecraft:coal 1
+ctl wait 40
+starter_line=$(info 12 100 14)
+echo "  starter: $starter_line"
+starter_energy=$(energy_of "$starter_line")
+starter_carbon=$(carbon_of "$starter_line")
+[ $((starter_energy + starter_carbon)) = 48000 ] ||
+    fail "the starter furnator made FE out of nothing or lost some: energy $starter_energy + carbon $starter_carbon != 48000 ($starter_line)"
+[ "$starter_energy" -lt 48000 ] ||
+    fail "a starter furnator made a whole coal's 48,000 FE in 40 ticks: $starter_line"
+[ "$starter_carbon" -gt 0 ] || fail "the starter furnator is still burning: $starter_line"
+
+echo "== slice 6: every energy cable tier carries its own rate =="
+# Same command, seven exact numbers: the basic cable names 2,000 FE/t and the
+# starter 500, which is the declaration the relay uses for the whole network.
+tier_cable() { # X ID RATE
+    place "$1" 100 16 "$2"
+    expect_info "$1" 100 16 "no storage, moves up to $3 FE/t"
+}
+tier_cable -6 powah:energy_cable_starter 500
+tier_cable -4 powah:energy_cable_basic 2000
+tier_cable -2 powah:energy_cable_hardened 5000
+tier_cable 0 powah:energy_cable_blazing 20000
+tier_cable 2 powah:energy_cable_niotic 50000
+tier_cable 4 powah:energy_cable_spirited 200000
+tier_cable 6 powah:energy_cable_nitro 1000000
+
+echo "== slice 6: a cable network joins its own tier and no other =="
+# Upstream's `CableNet`: "different tiers never connect". A cell behind a
+# starter cable on a basic network's far side is off that network, so it stays
+# empty; replace the starter cable with a basic one and the charge crosses.
+place 0 100 18 powah:energy_cell_starter
+place 1 100 18 powah:energy_cable_basic
+place 2 100 18 powah:energy_cable_starter
+place 3 100 18 powah:energy_cell_starter
+set_floor 0 100 18 100000 1000
+ctl wait 60
+cross_line=$(info 3 100 18)
+echo "  behind the starter cable: $cross_line"
+[ "$(energy_of "$cross_line")" = 0 ] ||
+    fail "a basic cable network relayed through a starter cable into a cell: $cross_line"
+place 2 100 18 powah:energy_cable_basic
+for _ in $(seq 1 10); do
+    [ "$(energy_of "$cross_line")" -gt 0 ] && break
+    ctl wait 10
+    cross_line=$(info 3 100 18)
+done
+echo "  with the basic cable: $cross_line"
+[ "$(energy_of "$cross_line")" -gt 0 ] ||
+    fail "the two basic cables did not relay into the cell: $cross_line"
+
 echo "== slice 5: the starter rod fills the orb with exactly the recipe's 10,000 FE =="
 # An Energizing Orb holds seven slots (0 the result, 1-6 the inputs) and a buffer
 # whose capacity is the recipe its inputs match: iron + gold is 10,000 FE into two
@@ -843,8 +984,20 @@ for block in powah:energizing_orb powah:energizing_rod_starter powah:energizing_
     got=$(echo "$broken" | jq -r --arg id "$block" '.drops[$id] // 0')
     [ "$got" -ge 1 ] || fail "breaking $block dropped $got of itself, not the block"
 done
+# Slice 6: every furnator and cable tier drops itself.
+for tier in basic hardened blazing niotic spirited nitro; do
+    for block in "powah:furnator_$tier" "powah:energy_cable_$tier"; do
+        place 6 100 0 "$block"
+        ctl look-at-block 6 100 0 >/dev/null || true
+        broken=$(ctl break 6 100 0) || fail "cannot break $block at 6,100,0"
+        echo "$broken" | jq -c '{scenario:"loot", block, drops}'
+        [ "$(echo "$broken" | jq -r '.block')" = "minecraft:air" ] || fail "$block did not break"
+        got=$(echo "$broken" | jq -r --arg id "$block" '.drops[$id] // 0')
+        [ "$got" -ge 1 ] || fail "breaking $block dropped $got of itself, not the block"
+    done
+done
 ctl command "gamemode creative @s" >/dev/null
 ctl command "clear @s" >/dev/null
 ctl wait 3
 
-echo "PASS: a fuelled furnator made FE, the cable carried it into the cell, an unfuelled furnator made nothing, a cell without a cable stayed empty, a full cell stayed full, a charged cell drained through a cable into an empty one, a three-cable network carried a charge across its run with the two cells' sum unchanged and a cell off the network empty, the six material items exist, every material and machine recipe crafted its declared output and consumed its ingredients, each machine dropped itself, every energy cell tier clamped 2,000,000,000 FE at its own capacity and carried its own transfer, two adjacent cells swapped within their own transfer cap without creating FE, every cell tier dropped itself, a starter rod filled the orb to exactly its recipe's 10,000 FE and stood at 0, an orb with no rod and an orb with no recipe produced nothing while its rod kept its charge, a nitro rod made a blazing crystal at exactly 120,000 FE and kept the other 80,000, the blaze-rod blazing recipe, the niotic, spirited and nitro crystals all energised, every new block and item exists, every carried recipe including the five previously blocked cells crafts its declared output and consumes its ingredients, and every guessed id is unknown without the package"
+echo "PASS: a fuelled furnator made FE, the cable carried it into the cell, an unfuelled furnator made nothing, a cell without a cable stayed empty, a full cell stayed full, a charged cell drained through a cable into an empty one, a three-cable network carried a charge across its run with the two cells' sum unchanged and a cell off the network empty, the six material items exist, every material and machine recipe crafted its declared output and consumed its ingredients, each machine dropped itself, every energy cell tier clamped 2,000,000,000 FE at its own capacity and carried its own transfer, two adjacent cells swapped within their own transfer cap without creating FE, every cell tier dropped itself, a starter rod filled the orb to exactly its recipe's 10,000 FE and stood at 0, an orb with no rod and an orb with no recipe produced nothing while its rod kept its charge, a nitro rod made a blazing crystal at exactly 120,000 FE and kept the other 80,000, the blaze-rod blazing recipe, the niotic, spirited and nitro crystals all energised, every new block and item exists, every carried recipe including the five previously blocked cells crafts its declared output and consumes its ingredients, every furnator tier clamped 2,000,000,000 FE at its own generation capacity, a nitro furnator made exactly 40,000 FE in one tick of a coal and a starter furnator kept energy + carbon at 48,000 while filling slowly, every cable tier read back its own rate, a basic network refused to relay through a starter cable and delivered once that cable was basic, every new furnator and cable tier dropped itself, and every guessed id is unknown without the package"

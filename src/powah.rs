@@ -22,10 +22,10 @@ use mod_api::{
 };
 
 use crate::runtime::{
-    CABLE_TRANSFER, CELL_TIER_COUNT, CellTier, EnergizingRecipe, FURNATOR_CAPACITY,
-    FURNATOR_TRANSFER, Furnator, Neighbour, ORB_MAX_ENERGY, ORB_OUTPUT_SLOT, ORB_SLOTS,
-    ROD_TIER_COUNT, RodTier, cell_tier, clamp_energy, comparator_strength, network_moves,
-    push_amount, rod_tier,
+    CABLE_TIER_COUNT, CELL_TIER_COUNT, CableTier, CellTier, EnergizingRecipe, FURNATOR_TIER_COUNT,
+    Furnator, FurnatorTier, Neighbour, ORB_MAX_ENERGY, ORB_OUTPUT_SLOT, ORB_SLOTS, ROD_TIER_COUNT,
+    RodTier, cable_tier, cell_tier, clamp_energy, comparator_strength, furnator_tier,
+    network_moves, push_amount, rod_tier,
 };
 
 /// The energizing orb block and its item.
@@ -45,17 +45,41 @@ pub(crate) const RODS: [(&str, &str); ROD_TIER_COUNT] = [
     ("powah:energizing_rod_nitro", "energizing_rod_nitro"),
 ];
 
-/// The furnator block and its item.
+/// The starter furnator block and its item (the ladder's first row).
 pub(crate) const FURNATOR: &str = "powah:furnator_starter";
-/// The energy cell block and its item.
+/// The starter energy cell block and its item.
 pub(crate) const CELL: &str = "powah:energy_cell_starter";
-/// The energy cable block and its item.
+/// The starter energy cable block and its item.
 pub(crate) const CABLE: &str = "powah:energy_cable_starter";
 
 /// The block entity type paths, in this mod's namespace.
 pub(crate) const FURNATOR_TYPE: &str = "furnator_starter";
 pub(crate) const CELL_TYPE: &str = "energy_cell_starter";
 pub(crate) const CABLE_TYPE: &str = "energy_cable_starter";
+
+/// Every furnator tier's block id and block entity type name, in the ladder's
+/// order (the index [`furnator_tier`] takes).
+pub(crate) const FURNATORS: [(&str, &str); FURNATOR_TIER_COUNT] = [
+    (FURNATOR, FURNATOR_TYPE),
+    ("powah:furnator_basic", "furnator_basic"),
+    ("powah:furnator_hardened", "furnator_hardened"),
+    ("powah:furnator_blazing", "furnator_blazing"),
+    ("powah:furnator_niotic", "furnator_niotic"),
+    ("powah:furnator_spirited", "furnator_spirited"),
+    ("powah:furnator_nitro", "furnator_nitro"),
+];
+
+/// Every energy cable tier's block id and block entity type name, in the
+/// ladder's order (the index [`cable_tier`] takes).
+pub(crate) const CABLES: [(&str, &str); CABLE_TIER_COUNT] = [
+    (CABLE, CABLE_TYPE),
+    ("powah:energy_cable_basic", "energy_cable_basic"),
+    ("powah:energy_cable_hardened", "energy_cable_hardened"),
+    ("powah:energy_cable_blazing", "energy_cable_blazing"),
+    ("powah:energy_cable_niotic", "energy_cable_niotic"),
+    ("powah:energy_cable_spirited", "energy_cable_spirited"),
+    ("powah:energy_cable_nitro", "energy_cable_nitro"),
+];
 
 /// Every energy cell tier's block id and block entity type name, in the ladder's
 /// order (the index [`cell_tier`] takes). A type name is its block id without this
@@ -88,10 +112,12 @@ const KEY_COOLDOWN: &str = "cool_down";
 /// The three machines, as a readout has to tell them apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
-    Furnator,
+    /// A furnator, carrying its tier's generation, capacity and transfer.
+    Furnator(FurnatorTier),
     /// An energy cell, carrying its tier's capacity and transfer.
     Cell(CellTier),
-    Cable,
+    /// An energy cable, carrying its tier's rate.
+    Cable(CableTier),
     /// The energizing orb: a recipe-gated buffer over seven slots.
     Orb,
     /// An energizing rod, carrying its tier's capacity and transfer.
@@ -102,14 +128,28 @@ impl Kind {
     /// The machine a block id names, `None` for anything else.
     pub(crate) fn of(block: &str) -> Option<Kind> {
         match block {
-            FURNATOR => Some(Kind::Furnator),
-            CABLE => Some(Kind::Cable),
             ORB => Some(Kind::Orb),
-            _ => cell_of(block)
-                .map(Kind::Cell)
+            _ => furnator_of(block)
+                .map(Kind::Furnator)
+                .or_else(|| cell_of(block).map(Kind::Cell))
+                .or_else(|| cable_of(block).map(Kind::Cable))
                 .or_else(|| rod_of(block).map(Kind::Rod)),
         }
     }
+}
+
+/// The furnator tier a block id names, with its numbers; `None` for any other
+/// block. The ids are the content's own (`data/powah/horizon/block/furnator_*`).
+pub(crate) fn furnator_of(block: &str) -> Option<FurnatorTier> {
+    let index = FURNATORS.iter().position(|(id, _)| *id == block)?;
+    furnator_tier(index)
+}
+
+/// The energy cable tier a block id names, with its rate; `None` for any other
+/// block. The ids are the content's own (`data/powah/horizon/block/energy_cable_*`).
+pub(crate) fn cable_of(block: &str) -> Option<CableTier> {
+    let index = CABLES.iter().position(|(id, _)| *id == block)?;
+    cable_tier(index)
 }
 
 /// The energy cell a block id names, with its tier's numbers; `None` for any other
@@ -148,13 +188,13 @@ pub(crate) fn container() -> ModContainer {
     }
 }
 
-/// The furnator's buffer (`AbstractEnergyProvider`): 20,000 FE, filled by its own
-/// burn only, given out at 80 a side.
-pub(crate) fn furnator_battery() -> ModEnergyBuffer {
+/// A furnator's buffer (`AbstractEnergyProvider`): the tier's capacity, filled by
+/// its own burn only, given out at the tier's transfer a side.
+pub(crate) fn furnator_battery(tier: FurnatorTier) -> ModEnergyBuffer {
     ModEnergyBuffer {
-        capacity: FURNATOR_CAPACITY,
+        capacity: tier.capacity,
         max_insert: 0,
-        max_extract: FURNATOR_TRANSFER,
+        max_extract: tier.transfer,
         insert_faces: [false; 6],
         extract_faces: [true; 6],
     }
@@ -176,7 +216,7 @@ pub(crate) fn cell_battery(tier: CellTier) -> ModEnergyBuffer {
 /// 0), so it declares none and is only ever a relay.
 pub(crate) fn battery_of(block: &str) -> Option<ModEnergyBuffer> {
     match Kind::of(block) {
-        Some(Kind::Furnator) => Some(furnator_battery()),
+        Some(Kind::Furnator(tier)) => Some(furnator_battery(tier)),
         Some(Kind::Cell(tier)) => Some(cell_battery(tier)),
         Some(Kind::Orb) => Some(orb_battery()),
         Some(Kind::Rod(tier)) => Some(rod_battery(tier)),
@@ -184,10 +224,11 @@ pub(crate) fn battery_of(block: &str) -> Option<ModEnergyBuffer> {
     }
 }
 
-/// The furnator saved in a block entity's compound; a fresh one is empty.
-pub(crate) fn read(saved: &Tag) -> Furnator {
+/// The furnator saved in a block entity's compound, clamped into its tier; a
+/// fresh one is empty.
+pub(crate) fn read(saved: &Tag, tier: FurnatorTier) -> Furnator {
     Furnator {
-        energy: clamp_energy(int(saved, KEY_ENERGY), FURNATOR_CAPACITY),
+        energy: clamp_energy(int(saved, KEY_ENERGY), tier.capacity),
         carbon: int(saved, KEY_CARBON).max(0),
     }
 }
@@ -468,16 +509,18 @@ pub(crate) fn status_line(
 ) -> String {
     let [x, y, z] = pos;
     match kind {
-        Kind::Furnator => {
+        Kind::Furnator(tier) => {
             let fuel = match fuel {
                 Some((item, count)) => format!("{item} x{count}"),
                 None => "empty".to_owned(),
             };
             format!(
-                "Furnator at {x},{y},{z}: {energy}/{FURNATOR_CAPACITY} FE (comparator {}, \
-                 carbon {carbon}, burning {}, fuel {fuel}, t={time})",
-                comparator_strength(energy, FURNATOR_CAPACITY),
+                "Furnator at {x},{y},{z}: {energy}/{} FE (comparator {}, \
+                 carbon {carbon}, burning {}, fuel {fuel}, {} FE/t a side, t={time})",
+                tier.capacity,
+                comparator_strength(energy, tier.capacity),
                 carbon > 0,
+                tier.transfer,
             )
         }
         Kind::Cell(tier) => format!(
@@ -486,8 +529,9 @@ pub(crate) fn status_line(
             comparator_strength(energy, tier.capacity),
             tier.transfer,
         ),
-        Kind::Cable => format!(
-            "Energy Cable at {x},{y},{z}: no storage, moves up to {CABLE_TRANSFER} FE/t (t={time})"
+        Kind::Cable(tier) => format!(
+            "Energy Cable at {x},{y},{z}: no storage, moves up to {} FE/t (t={time})",
+            tier.transfer
         ),
         // The orb and a rod have readouts of their own ([`orb_line`], [`rod_line`]);
         // [`info_line`] gives them those, so these arms are only the type's
@@ -637,9 +681,9 @@ pub(crate) fn info_line(host: &mut dyn ServerHost, pos: [i32; 3]) -> Option<Stri
     let kind = Kind::of(&block_at(&*host, level, pos)?)?;
     let time = level.game_time(&*host).unwrap_or(0);
     let (energy, carbon, fuel) = match kind {
-        Kind::Furnator => {
+        Kind::Furnator(tier) => {
             let entity = host.block_entity(level, pos)?;
-            let state = read(&Tag::Compound(entity.data(&*host)?));
+            let state = read(&Tag::Compound(entity.data(&*host)?), tier);
             let fuel = entity
                 .item_slot(&*host, FUEL_SLOT as u32)
                 .ok()
@@ -656,7 +700,7 @@ pub(crate) fn info_line(host: &mut dyn ServerHost, pos: [i32; 3]) -> Option<Stri
                 None,
             )
         }
-        Kind::Cable => (0, 0, None),
+        Kind::Cable(_) => (0, 0, None),
         Kind::Orb => {
             let orb = read_orb(host, level, pos)?;
             return Some(orb_line(
@@ -696,7 +740,7 @@ pub(crate) fn set_energy(host: &mut dyn ServerHost, pos: [i32; 3], amount: i32) 
         return SetOutcome::NoBlock;
     };
     let capacity = match Kind::of(&block) {
-        Some(Kind::Furnator) => FURNATOR_CAPACITY,
+        Some(Kind::Furnator(tier)) => tier.capacity,
         Some(Kind::Cell(tier)) => tier.capacity,
         Some(Kind::Rod(tier)) => tier.capacity,
         // The orb's buffer is the recipe's own energy: with no recipe it stores
@@ -704,7 +748,7 @@ pub(crate) fn set_energy(host: &mut dyn ServerHost, pos: [i32; 3], amount: i32) 
         Some(Kind::Orb) => read_orb(host, level, pos)
             .and_then(|orb| orb.recipe)
             .map_or(0, |recipe| recipe.energy),
-        Some(Kind::Cable) => return SetOutcome::Cable,
+        Some(Kind::Cable(_)) => return SetOutcome::Cable,
         None => return SetOutcome::NoBlock,
     };
     let energy = clamp_energy(amount, capacity);
@@ -721,14 +765,16 @@ pub(crate) fn set_energy(host: &mut dyn ServerHost, pos: [i32; 3], amount: i32) 
     }
 }
 
-/// The furnator: a block entity that burns its fuel and ticks.
+/// A furnator tier: a block entity that burns its fuel and ticks at its own
+/// generation into its own buffer.
 pub(crate) struct FurnatorPart {
     queue: Arc<Mutex<Queue>>,
+    tier: FurnatorTier,
 }
 
 impl FurnatorPart {
-    pub(crate) fn new(queue: Arc<Mutex<Queue>>) -> FurnatorPart {
-        FurnatorPart { queue }
+    pub(crate) fn new(queue: Arc<Mutex<Queue>>, tier: FurnatorTier) -> FurnatorPart {
+        FurnatorPart { queue, tier }
     }
 }
 
@@ -747,7 +793,7 @@ impl BlockEntityPart for FurnatorPart {
     /// `Changed` only when something moved, so an idle furnator does not dirty its
     /// chunk every tick.
     fn block_entity_tick(&self, host: &mut dyn ServerHost, event: &mut BlockEntityTickEvent<'_>) {
-        let changed = burn(host, event);
+        let changed = burn(host, event, self.tier);
         self.enqueue(host, event.pos);
         if !changed {
             *event.reply = BlockEntityTickReply::Unchanged;
@@ -830,13 +876,17 @@ impl BlockEntityPart for OrbPart {
 
 /// The furnator's tick: `initBurn` (`AbstractGeneratorBlock`), one tick of
 /// production, and the state written back. Answers whether anything changed.
-fn burn(host: &mut dyn ServerHost, event: &mut BlockEntityTickEvent<'_>) -> bool {
+fn burn(
+    host: &mut dyn ServerHost,
+    event: &mut BlockEntityTickEvent<'_>,
+    tier: FurnatorTier,
+) -> bool {
     let resized = event.entity.items.len() != SLOT_COUNT;
     if resized {
         event.entity.items.resize(SLOT_COUNT, None);
     }
     let mut saved = Tag::Compound(std::mem::take(&mut event.entity.nbt));
-    let before = read(&saved);
+    let before = read(&saved, tier);
     let mut state = before;
     let mut took = false;
     if state.wants_fuel() {
@@ -850,7 +900,7 @@ fn burn(host: &mut dyn ServerHost, event: &mut BlockEntityTickEvent<'_>) -> bool
             took = true;
         }
     }
-    let produced = state.tick() > 0;
+    let produced = state.tick(tier) > 0;
     write(&mut saved, &state);
     if let Tag::Compound(nbt) = saved {
         event.entity.nbt = nbt;
@@ -911,7 +961,7 @@ pub(crate) fn on_level_tick_post(
             continue;
         };
         match kind {
-            Kind::Furnator => push_out(host, level, pos, FURNATOR_TRANSFER),
+            Kind::Furnator(tier) => push_out(host, level, pos, tier.transfer),
             Kind::Cell(tier) => push_out(host, level, pos, tier.transfer),
             // A rod gives to its orb in the same phase; the orb itself moves
             // nothing (it has no neighbours to give to).
@@ -919,11 +969,11 @@ pub(crate) fn on_level_tick_post(
                 rod_tick(host, level, pos, tier);
             }
             Kind::Orb => {}
-            Kind::Cable => {
+            Kind::Cable(tier) => {
                 if planned.contains(&pos) {
                     continue;
                 }
-                planned.extend(relay_network(host, level, pos));
+                planned.extend(relay_network(host, level, pos, tier));
             }
         }
     }
@@ -999,6 +1049,7 @@ fn discover_cables(
     host: &mut dyn ServerHost,
     level: LevelRef,
     start: [i32; 3],
+    tier: CableTier,
 ) -> BTreeSet<[i32; 3]> {
     let mut cables = BTreeSet::from([start]);
     let mut queue = VecDeque::from([start]);
@@ -1011,7 +1062,11 @@ fn discover_cables(
             if cables.contains(&next) {
                 continue;
             }
-            if block_at(&*host, level, next).as_deref().and_then(Kind::of) == Some(Kind::Cable) {
+            // Upstream's `CableNet` joins cables of one tier only: a basic run
+            // does not relay into a starter one (`different tiers never connect`).
+            if block_at(&*host, level, next).as_deref().and_then(Kind::of)
+                == Some(Kind::Cable(tier))
+            {
                 cables.insert(next);
                 queue.push_back(next);
             }
@@ -1031,8 +1086,9 @@ fn relay_network(
     host: &mut dyn ServerHost,
     level: LevelRef,
     start: [i32; 3],
+    tier: CableTier,
 ) -> BTreeSet<[i32; 3]> {
-    let cables = discover_cables(host, level, start);
+    let cables = discover_cables(host, level, start, tier);
     let mut ports: Vec<Neighbour> = Vec::new();
     let mut places: Vec<Port> = Vec::new();
     for cable in &cables {
@@ -1041,7 +1097,7 @@ fn relay_network(
             let Some(block) = block_at(&*host, level, pos) else {
                 continue;
             };
-            if Kind::of(&block) == Some(Kind::Cable) {
+            if matches!(Kind::of(&block), Some(Kind::Cable(_))) {
                 continue; // inside the network: neither a source nor a sink
             }
             // A block touching two cables of one network is one place: reading it
@@ -1060,7 +1116,7 @@ fn relay_network(
         }
     }
     let rotation = level.game_time(&*host).unwrap_or(0).max(0) as usize;
-    for step in network_moves(&ports, CABLE_TRANSFER, rotation) {
+    for step in network_moves(&ports, tier.transfer, rotation) {
         let from = places[step.from];
         let to = places[step.to];
         let want = u32::try_from(step.amount).unwrap_or(0);
@@ -1136,7 +1192,7 @@ pub(crate) fn integer(argument: Option<&CommandArgumentValue>) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{CELL_CAPACITY, CELL_TRANSFER};
+    use crate::runtime::{CELL_CAPACITY, CELL_TRANSFER, FURNATOR_CAPACITY, FURNATOR_TRANSFER};
 
     /// The review finding (2026-11-18): both usages act on any loaded machine at
     /// player-chosen coordinates, so a level-0 registration lets a non-operator
@@ -1195,14 +1251,89 @@ mod tests {
 
     #[test]
     fn a_block_id_maps_to_its_machine_and_nothing_else_does() {
-        assert_eq!(Kind::of(FURNATOR), Some(Kind::Furnator));
+        assert_eq!(
+            Kind::of(FURNATOR),
+            Some(Kind::Furnator(furnator_tier(0).expect("the starter tier")))
+        );
         assert_eq!(
             Kind::of(CELL),
             Some(Kind::Cell(cell_tier(0).expect("the starter tier")))
         );
-        assert_eq!(Kind::of(CABLE), Some(Kind::Cable));
+        assert_eq!(
+            Kind::of(CABLE),
+            Some(Kind::Cable(cable_tier(0).expect("the starter tier")))
+        );
         assert_eq!(Kind::of("minecraft:chest"), None);
-        assert_eq!(Kind::of("powah:furnator_basic"), None, "a later tier");
+        assert_eq!(
+            Kind::of("powah:furnator_basic"),
+            Some(Kind::Furnator(furnator_tier(1).expect("the basic tier"))),
+            "a later furnator tier"
+        );
+        assert_eq!(
+            Kind::of("powah:energy_cable_basic"),
+            Some(Kind::Cable(cable_tier(1).expect("the basic cable"))),
+            "a later cable tier"
+        );
+    }
+
+    #[test]
+    fn every_furnator_tier_is_one_of_the_ladder_with_its_own_buffer() {
+        let expected = [
+            ("powah:furnator_starter", 20, 20_000, 80),
+            ("powah:furnator_basic", 80, 80_000, 320),
+            ("powah:furnator_hardened", 200, 200_000, 800),
+            ("powah:furnator_blazing", 800, 800_000, 3_200),
+            ("powah:furnator_niotic", 2_000, 2_000_000, 8_000),
+            ("powah:furnator_spirited", 8_000, 8_000_000, 32_000),
+            ("powah:furnator_nitro", 40_000, 40_000_000, 160_000),
+        ];
+        for (index, (id, generation, capacity, transfer)) in expected.into_iter().enumerate() {
+            let tier = furnator_of(id).unwrap_or_else(|| panic!("{id} is a furnator"));
+            assert_eq!(
+                (tier.generation, tier.capacity, tier.transfer),
+                (generation, capacity, transfer),
+                "{id} is the ladder's tier {index}"
+            );
+            assert_eq!(
+                tier,
+                furnator_tier(index).expect("the same tier in the rule's table")
+            );
+            let buffer = battery_of(id).unwrap_or_else(|| panic!("{id} declares a buffer"));
+            assert_eq!(buffer.capacity, capacity, "{id}'s capacity");
+            assert_eq!(buffer.max_insert, 0, "{id} makes its own FE");
+            assert_eq!(buffer.max_extract, transfer, "{id}'s extract cap");
+            assert_eq!(buffer.insert_faces, [false; 6], "{id} takes no FE in");
+            assert_eq!(
+                buffer.extract_faces, [true; 6],
+                "{id} gives FE on every face"
+            );
+        }
+        assert_eq!(furnator_of(CELL), None, "a cell is not a furnator");
+        assert_eq!(furnator_of("minecraft:furnace"), None);
+    }
+
+    #[test]
+    fn every_cable_tier_is_one_of_the_ladder_and_declares_no_buffer() {
+        let expected = [
+            ("powah:energy_cable_starter", 500),
+            ("powah:energy_cable_basic", 2_000),
+            ("powah:energy_cable_hardened", 5_000),
+            ("powah:energy_cable_blazing", 20_000),
+            ("powah:energy_cable_niotic", 50_000),
+            ("powah:energy_cable_spirited", 200_000),
+            ("powah:energy_cable_nitro", 1_000_000),
+        ];
+        for (index, (id, transfer)) in expected.into_iter().enumerate() {
+            let tier = cable_of(id).unwrap_or_else(|| panic!("{id} is an energy cable"));
+            assert_eq!(tier.transfer, transfer, "{id} is the ladder's tier {index}");
+            assert_eq!(
+                tier,
+                cable_tier(index).expect("the same tier in the rule's table")
+            );
+            assert_eq!(battery_of(id), None, "{id} stores nothing");
+        }
+        assert_eq!(cable_of(FURNATOR), None, "a furnator is not a cable");
+        assert_eq!(cable_of("minecraft:chest"), None);
     }
 
     #[test]
@@ -1221,7 +1352,7 @@ mod tests {
 
     #[test]
     fn the_furnator_declares_an_extract_only_buffer() {
-        let buffer = furnator_battery();
+        let buffer = furnator_battery(furnator_tier(0).expect("the starter tier"));
         assert_eq!(buffer.capacity, FURNATOR_CAPACITY);
         assert_eq!(buffer.max_insert, 0, "it makes its own FE");
         assert_eq!(buffer.max_extract, FURNATOR_TRANSFER);
@@ -1262,7 +1393,13 @@ mod tests {
 
     #[test]
     fn a_fresh_compound_is_an_empty_furnator() {
-        assert_eq!(read(&Tag::Compound(Compound::new())), Furnator::new());
+        assert_eq!(
+            read(
+                &Tag::Compound(Compound::new()),
+                furnator_tier(0).expect("the starter tier")
+            ),
+            Furnator::new()
+        );
     }
 
     #[test]
@@ -1273,7 +1410,10 @@ mod tests {
             carbon: 46_800,
         };
         write(&mut saved, &state);
-        assert_eq!(read(&saved), state);
+        assert_eq!(
+            read(&saved, furnator_tier(0).expect("the starter tier")),
+            state
+        );
         assert_eq!(
             saved.get(KEY_ENERGY),
             Some(&Tag::Int(20_000)),
@@ -1383,14 +1523,15 @@ mod tests {
 
     #[test]
     fn the_info_lines_are_the_ones_the_e2e_asserts() {
+        let starter_furnator = Kind::Furnator(furnator_tier(0).expect("the starter tier"));
         assert_eq!(
-            status_line(Kind::Furnator, [0, 100, 0], 0, 0, None, 150),
+            status_line(starter_furnator, [0, 100, 0], 0, 0, None, 150),
             "Furnator at 0,100,0: 0/20000 FE (comparator 0, carbon 0, burning false, fuel empty, \
-             t=150)"
+             80 FE/t a side, t=150)"
         );
         assert_eq!(
             status_line(
-                Kind::Furnator,
+                starter_furnator,
                 [0, 100, 0],
                 320,
                 46_800,
@@ -1398,7 +1539,13 @@ mod tests {
                 282
             ),
             "Furnator at 0,100,0: 320/20000 FE (comparator 0, carbon 46800, burning true, fuel \
-             minecraft:coal x4, t=282)"
+             minecraft:coal x4, 80 FE/t a side, t=282)"
+        );
+        let nitro_furnator = Kind::Furnator(furnator_tier(6).expect("the nitro tier"));
+        assert_eq!(
+            status_line(nitro_furnator, [0, 100, 8], 40_000_000, 8_000, None, 500),
+            "Furnator at 0,100,8: 40000000/40000000 FE (comparator 15, carbon 8000, burning \
+             true, fuel empty, 160000 FE/t a side, t=500)"
         );
         let starter = Kind::Cell(cell_tier(0).expect("the starter tier"));
         assert_eq!(
@@ -1416,8 +1563,26 @@ mod tests {
              side, t=380)"
         );
         assert_eq!(
-            status_line(Kind::Cable, [1, 100, 0], 0, 0, None, 188),
+            status_line(
+                Kind::Cable(cable_tier(0).expect("the starter cable")),
+                [1, 100, 0],
+                0,
+                0,
+                None,
+                188
+            ),
             "Energy Cable at 1,100,0: no storage, moves up to 500 FE/t (t=188)"
+        );
+        assert_eq!(
+            status_line(
+                Kind::Cable(cable_tier(1).expect("the basic cable")),
+                [1, 100, 0],
+                0,
+                0,
+                None,
+                188
+            ),
+            "Energy Cable at 1,100,0: no storage, moves up to 2000 FE/t (t=188)"
         );
     }
 }

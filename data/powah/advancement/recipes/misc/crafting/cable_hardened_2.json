@@ -1,0 +1,54 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_capacitor_hardened": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:capacitor_hardened"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_dielectric_rod_horizontal": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:dielectric_rod_horizontal"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_steel_energized": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:steel_energized"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "powah:crafting/cable_hardened_2"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_dielectric_rod_horizontal",
+      "has_capacitor_hardened",
+      "has_steel_energized"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "powah:crafting/cable_hardened_2"
+    ]
+  }
+}

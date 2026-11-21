@@ -1,4 +1,4 @@
-# Powah for Horizon — slices 1–5
+# Powah for Horizon — slices 1–6
 
 A clean-room Rust rewrite of **Powah! (Rearchitected) 6.2.10** (`Technici4n/Powah`,
 **LGPL-3.0-only**) for Horizon 26.3, as one flat SDK package (`api = "0.2"`): the
@@ -35,9 +35,15 @@ blocks fills the orb's buffer at up to its tier's transfer (100 up to 200,000 FE
 losing exactly what the orb took. That is what makes the five higher cell tiers, the
 large capacitor and the higher capacitor and rod tiers craftable.
 
-All three declare a real `Capabilities.Energy.BLOCK` buffer (the amount is the int
-`energy` in the block entity's saved compound), so other machines can fill and
-drain the furnator and the cell; the cable is a pure relay.
+Slice 6 completes the two **furnator and cable ladders**: the basic, hardened, blazing,
+niotic, spirited and nitro furnators (80/200/800/2,000/8,000/40,000 FE/t into their own
+80k/200k/800k/2M/8M/40M FE buffers, each giving at its own 320…160,000 FE/t a side) and the
+six matching cables (2,000 up to 1,000,000 FE/t). A cable network joins only its own
+tier's cables, which is upstream's `CableNet` rule.
+
+Every machine declares a real `Capabilities.Energy.BLOCK` buffer (the amount is the int
+`energy` in the block entity's saved compound), so other machines can fill and drain a
+furnator or a cell; a cable is a pure relay.
 
 - Scope, behaviour table, the hook table, deviations and the gap list:
   [`notes.md`](notes.md); upstream analysis: [`FINDINGS.md`](FINDINGS.md);
@@ -51,10 +57,10 @@ drain the furnator and the cell; the cable is a pure relay.
 
 ```text
 powah.hmod            the delivered package (horizon-mod.toml + Cargo.toml + src/ + assets/ + data/)
-horizon-mod.toml      the only manifest and identity: id, version 0.2.3, api 0.2, [native] pins
+horizon-mod.toml      the only manifest and identity: id, version 0.2.6, api 0.2, [native] pins
 Cargo.toml            one crate; its only dependency is horizon-mod-api from .horizon/sdk/
 src/lib.rs            the one `#[mod_api::horizon_mod] impl Hooks`
-src/powah.rs          the glue: the three block entity Parts, the queue, the buffers, the cable network, the command
+src/powah.rs          the glue: the block entity Parts, the queue, the tier tables, the buffers, the cable network, the command
 src/runtime.rs        the pure machine rules and their tests (no mod_api types)
 assets/powah/         the carried blockstates, models, items, textures and lang
 data/powah/           the carried blocks, items, loot, recipes, tags, the creative tab
@@ -101,6 +107,9 @@ GAME=<that game> CONTROL_GAME=<an unmodified build> tools/e2e.sh   # the negativ
 SELFTEST=1 GAME=<that game> tools/e2e.sh                           # the fail-capable leg
 SELFTEST=craft GAME=<that game> tools/e2e.sh                       # the recipe leg's fail-capable run
 SELFTEST=network GAME=<that game> tools/e2e.sh                     # the cable network's fail-capable run
+SELFTEST=orb GAME=<that game> tools/e2e.sh                         # the rod's exact fall
+SELFTEST=furnator GAME=<that game> tools/e2e.sh                    # the furnator tier clamp
+SELFTEST=furnator-rate GAME=<that game> tools/e2e.sh               # the nitro furnator's exact tick
 ```
 
 Give the port **its own launcher instance** (e.g. `--instance powah-e2e`, and the

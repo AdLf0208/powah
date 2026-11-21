@@ -1,5 +1,16 @@
-# Validation — Powah slices 1 to 5
+# Validation — Powah slices 1 to 6
 
+> **0.2.6 (slice 6, the Furnator and Energy Cable ladders)** is recorded in
+> [`notes.md`](notes.md#slice-6--the-furnator-and-energy-cable-tier-ladders-2026-11-21): the
+> slice and its gap line (the package's own "not yet ported: the other six furnator and
+> cable tiers"), the red proof (four `todo!()` functions: `furnator_tier`, `cable_tier`,
+> `furnator_of`, `cable_of`; 28 passed / 20 failed), the ladder at pin `0a875da` (48 tests,
+> clippy 0 warnings, `fmt --check` clean, two byte-identical builds of 293,821 B, `check`,
+> `fits` against the pin **and** against `0b14f8a`, gate 1/1 with **422 entries**, dialect
+> 132/132) and the in-game legs (main `PASS`+`EXIT:0`, control / `SELFTEST=furnator` /
+> `SELFTEST=furnator-rate` at `EXIT:1`, `check-e2e-logs --strict` 14/14). Package:
+> `powah.hmod`, 293,821 B, sha256 `3ab1b5b46df0285f14f5d8fd47367e1cd053cbf96e671bfe8e3bb2eca30ed358`.
+> Launcher build: `Compiling powah (1 of 1)`, `native-0a875da-9952c6153ae1`.
 > **0.2.5 (slice 5, the Energizing Orb, its seven rods and the materials they make)** is recorded in
 > [`notes.md`](notes.md#slice-5--the-energizing-orb-the-rod-ladder-and-the-materials-2026-11-21):
 > the slice and its gap line (slice 4's five `blocked(energizing-orb)` cells), the red proof

@@ -1,0 +1,54 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_capacitor_spirited": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:capacitor_spirited"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_dielectric_rod_horizontal": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:dielectric_rod_horizontal"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_energy_cable_niotic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:energy_cable_niotic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "powah:crafting/cable_spirited"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_dielectric_rod_horizontal",
+      "has_capacitor_spirited",
+      "has_energy_cable_niotic"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "powah:crafting/cable_spirited"
+    ]
+  }
+}

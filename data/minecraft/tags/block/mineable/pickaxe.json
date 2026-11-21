@@ -17,6 +17,18 @@
     "powah:energizing_rod_niotic",
     "powah:energizing_rod_spirited",
     "powah:energizing_rod_nitro",
-    "powah:blazing_crystal_block"
+    "powah:blazing_crystal_block",
+    "powah:furnator_basic",
+    "powah:furnator_hardened",
+    "powah:furnator_blazing",
+    "powah:furnator_niotic",
+    "powah:furnator_spirited",
+    "powah:furnator_nitro",
+    "powah:energy_cable_basic",
+    "powah:energy_cable_hardened",
+    "powah:energy_cable_blazing",
+    "powah:energy_cable_niotic",
+    "powah:energy_cable_spirited",
+    "powah:energy_cable_nitro"
   ]
 }

@@ -16,13 +16,15 @@ names, in survival so the grid is really consumed, and asserts:
    empty.
 
 The cases are the eight material recipes slice 2 adds, the three machine recipes
-slice 1 carried but could not craft, slice 4's basic energy cell, and slice 5's
-twenty-one: the energizing orb, the seven rods, the large capacitor and its five
+slice 1 carried but could not craft, slice 4's basic energy cell, slice 5's
+twenty-one (the energizing orb, the seven rods, the large capacitor and its five
 tiers, the five cell recipes that needed the orb's materials, and the blazing
-crystal block both ways. A wrong id or count exits 1 with the observed slot and
-two off-pattern grids (a stick where the casing goes, on the furnator's and the
-orb's shapes) must leave the result empty. `SELFTEST=1` expects the first output
-one item too high, so the run MUST fail — that is what proves the assertions can
+crystal block both ways), and slice 6's eighteen: the six furnator tiers and both
+of the jar's cable recipes for the six cable tiers. A wrong id or count exits 1
+with the observed slot and three off-pattern grids (a stick where the casing goes
+on the furnator's and the orb's shapes, and where the capacitor goes on the
+cable's) must leave the result empty. `SELFTEST=1` expects the first output one
+item too high, so the run MUST fail — that is what proves the assertions can
 fail.
 """
 import json
@@ -103,6 +105,29 @@ def cell(material, capacitor_id, below):
 
 CELL_HARDENED = cell("powah:steel_energized", "powah:capacitor_hardened",
                      "powah:energy_cell_basic")
+
+
+def furnator(material, capacitor_id, below):
+    """`ggg/cdc/gfg`: the tier's material round the ring, its capacitor beside
+    the casing, and the previous tier's furnator in the bottom middle."""
+    return {material: [100, 101, 102, 106, 108],
+            capacitor_id: [103, 105],
+            "powah:dielectric_casing": [104],
+            below: [107]}
+
+
+FURNATOR_BASIC = {"minecraft:iron_ingot": [100, 101, 102, 106, 108],
+                  "powah:capacitor_basic": [103, 105],
+                  "powah:dielectric_casing": [104],
+                  "powah:furnator_starter": [107]}
+
+
+def cable(capacitor_id, middle):
+    """`ddd/tct/ddd`: six horizontal dielectric rods, the tier's capacitor in
+    the centre and either the previous cable or the tier's material beside it."""
+    return {"powah:dielectric_rod_horizontal": [100, 101, 102, 106, 107, 108],
+            middle: [103, 105],
+            capacitor_id: [104]}
 
 
 def shaped(label, pattern, out, out_count):
@@ -218,6 +243,66 @@ CASES = [
     shapeless("one blazing crystal block -> nine blazing crystals",
               [("powah:blazing_crystal_block", 100)],
               "powah:crystal_blazing", 9),
+    # --- slice 6: the furnator ladder ---------------------------------------
+    shaped("iron + basic capacitor + casing + starter furnator -> a basic furnator",
+           FURNATOR_BASIC, "powah:furnator_basic", 1),
+    shaped("steel + hardened capacitor + casing + basic furnator -> a hardened furnator",
+           furnator("powah:steel_energized", "powah:capacitor_hardened",
+                    "powah:furnator_basic"),
+           "powah:furnator_hardened", 1),
+    shaped("blazing crystal + blazing capacitor + casing + hardened furnator -> a blazing furnator",
+           furnator("powah:crystal_blazing", "powah:capacitor_blazing",
+                    "powah:furnator_hardened"),
+           "powah:furnator_blazing", 1),
+    shaped("niotic crystal + niotic capacitor + casing + blazing furnator -> a niotic furnator",
+           furnator("powah:crystal_niotic", "powah:capacitor_niotic",
+                    "powah:furnator_blazing"),
+           "powah:furnator_niotic", 1),
+    shaped("spirited crystal + spirited capacitor + casing + niotic furnator -> a spirited furnator",
+           furnator("powah:crystal_spirited", "powah:capacitor_spirited",
+                    "powah:furnator_niotic"),
+           "powah:furnator_spirited", 1),
+    shaped("nitro crystal + nitro capacitor + casing + spirited furnator -> a nitro furnator",
+           furnator("powah:crystal_nitro", "powah:capacitor_nitro",
+                    "powah:furnator_spirited"),
+           "powah:furnator_nitro", 1),
+    # --- slice 6: the cable ladder, both of the jar's recipes per tier ------
+    shaped("6 rods + starter cable + basic capacitor -> 6 basic cables",
+           cable("powah:capacitor_basic", "powah:energy_cable_starter"),
+           "powah:energy_cable_basic", 6),
+    shaped("6 rods + iron + basic capacitor -> 12 basic cables",
+           cable("powah:capacitor_basic", "minecraft:iron_ingot"),
+           "powah:energy_cable_basic", 12),
+    shaped("6 rods + basic cable + hardened capacitor -> 6 hardened cables",
+           cable("powah:capacitor_hardened", "powah:energy_cable_basic"),
+           "powah:energy_cable_hardened", 6),
+    shaped("6 rods + energized steel + hardened capacitor -> 12 hardened cables",
+           cable("powah:capacitor_hardened", "powah:steel_energized"),
+           "powah:energy_cable_hardened", 12),
+    shaped("6 rods + hardened cable + blazing capacitor -> 6 blazing cables",
+           cable("powah:capacitor_blazing", "powah:energy_cable_hardened"),
+           "powah:energy_cable_blazing", 6),
+    shaped("6 rods + blazing crystal + blazing capacitor -> 12 blazing cables",
+           cable("powah:capacitor_blazing", "powah:crystal_blazing"),
+           "powah:energy_cable_blazing", 12),
+    shaped("6 rods + blazing cable + niotic capacitor -> 6 niotic cables",
+           cable("powah:capacitor_niotic", "powah:energy_cable_blazing"),
+           "powah:energy_cable_niotic", 6),
+    shaped("6 rods + niotic crystal + niotic capacitor -> 12 niotic cables",
+           cable("powah:capacitor_niotic", "powah:crystal_niotic"),
+           "powah:energy_cable_niotic", 12),
+    shaped("6 rods + niotic cable + spirited capacitor -> 6 spirited cables",
+           cable("powah:capacitor_spirited", "powah:energy_cable_niotic"),
+           "powah:energy_cable_spirited", 6),
+    shaped("6 rods + spirited crystal + spirited capacitor -> 12 spirited cables",
+           cable("powah:capacitor_spirited", "powah:crystal_spirited"),
+           "powah:energy_cable_spirited", 12),
+    shaped("6 rods + spirited cable + nitro capacitor -> 6 nitro cables",
+           cable("powah:capacitor_nitro", "powah:energy_cable_spirited"),
+           "powah:energy_cable_nitro", 6),
+    shaped("6 rods + nitro crystal + nitro capacitor -> 12 nitro cables",
+           cable("powah:capacitor_nitro", "powah:crystal_nitro"),
+           "powah:energy_cable_nitro", 12),
 ]
 
 
@@ -385,6 +470,8 @@ def main():
     for label, pattern, stand_in in (
         ("furnator", FURNATOR, (104, "powah:dielectric_casing")),
         ("energizing orb", ENERGIZING_ORB, (104, "powah:dielectric_casing")),
+        ("nitro cable", cable("powah:capacitor_nitro", "powah:crystal_nitro"),
+         (104, "powah:capacitor_nitro")),
     ):
         given = {}
         for item, targets in pattern.items():
@@ -410,10 +497,10 @@ def main():
     if failures:
         raise SystemExit(1)
     print("recipe PASS: every carried recipe — the eight material recipes, the three machines, "
-          "the basic cell, and slice 5's orb, seven rods, six capacitors, five cells and the "
-          "blazing crystal block both ways — crafts its declared output id and count, every "
-          "ingredient is consumed, the lava bucket leaves its bucket, and both off-pattern grids "
-          "leave the result empty")
+          "the basic cell, slice 5's orb, seven rods, six capacitors, five cells and the blazing "
+          "crystal block both ways, and slice 6's six furnator tiers and twelve cable recipes — "
+          "crafts its declared output id and count, every ingredient is consumed, the lava bucket "
+          "leaves its bucket, and all three off-pattern grids leave the result empty")
 
 
 if __name__ == "__main__":

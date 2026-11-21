@@ -1,0 +1,16 @@
+{
+  "template": "minecraft:chorus_plant",
+  "properties": {
+    "hardness": 2.0,
+    "explosion_resistance": 20.0,
+    "sounds": "minecraft:iron_block",
+    "requires_tool": true,
+    "occludes": false
+  },
+  "connects_to": "#powah:energy_cable_connects",
+  "thickness": 4.0,
+  "collision_shapes": {
+    "default": []
+  },
+  "item": true
+}

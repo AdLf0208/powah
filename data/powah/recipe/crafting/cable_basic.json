@@ -1,0 +1,18 @@
+{
+  "category": "misc",
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "c": "powah:capacitor_basic",
+    "d": "powah:dielectric_rod_horizontal",
+    "t": "powah:energy_cable_starter"
+  },
+  "pattern": [
+    "ddd",
+    "tct",
+    "ddd"
+  ],
+  "result": {
+    "count": 6,
+    "id": "powah:energy_cable_basic"
+  }
+}

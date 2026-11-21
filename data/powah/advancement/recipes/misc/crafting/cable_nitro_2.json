@@ -1,0 +1,54 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_capacitor_nitro": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:capacitor_nitro"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_crystal_nitro": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:crystal_nitro"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_dielectric_rod_horizontal": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:dielectric_rod_horizontal"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "powah:crafting/cable_nitro_2"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_dielectric_rod_horizontal",
+      "has_capacitor_nitro",
+      "has_crystal_nitro"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "powah:crafting/cable_nitro_2"
+    ]
+  }
+}

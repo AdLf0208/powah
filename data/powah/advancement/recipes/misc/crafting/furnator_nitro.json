@@ -1,0 +1,65 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_capacitor_nitro": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:capacitor_nitro"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_crystal_nitro": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:crystal_nitro"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_dielectric_casing": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:dielectric_casing"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_furnator_spirited": {
+      "conditions": {
+        "items": [
+          {
+            "items": "powah:furnator_spirited"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "powah:crafting/furnator_nitro"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_capacitor_nitro",
+      "has_crystal_nitro",
+      "has_furnator_spirited",
+      "has_dielectric_casing"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "powah:crafting/furnator_nitro"
+    ]
+  }
+}

@@ -64,17 +64,29 @@ struct Mod {
 
 #[mod_api::horizon_mod]
 impl Hooks for Mod {
-    /// Declare the machines: a block entity type each, the furnator's one fuel slot,
-    /// its and every cell tier's FE buffer, and the Parts that make them tick.
+    /// Declare the machines: a block entity type each, every furnator tier's one
+    /// fuel slot and FE buffer, every cell tier's buffer, and the Parts that make
+    /// them tick.
     ///
-    /// Nine blocks in all — the furnator, the seven energy cell tiers and the cable.
-    /// The cable declares no buffer (it stores nothing; upstream's capacity is 0) and
-    /// still needs a type and a tick, because a cable is what queues its own position
-    /// for the level's move phase.
+    /// Twenty-nine blocks in all: the three ladders of seven (furnators, cells,
+    /// cables), the orb and its seven rods. A cable declares no buffer (it stores
+    /// nothing; upstream's capacity is 0) and still needs a type and a tick,
+    /// because a cable is what queues its own position for the level's move phase.
     fn register(&self, registrar: &mut dyn Registrar, context: &RegistrationContext) {
-        let furnator = registrar.block_key(powah::FURNATOR);
-        registrar.block_container(&furnator, powah::container());
-        registrar.block_energy(&furnator, powah::furnator_battery());
+        // Every furnator tier: one fuel slot, one buffer with the tier's own
+        // generation capacity and per-side transfer (upstream's
+        // `AbstractGeneratorBlock` over `GeneratorConfig`).
+        for (index, (block, name)) in powah::FURNATORS.into_iter().enumerate() {
+            let tier = runtime::furnator_tier(index).expect("every furnator id is on the ladder");
+            let furnator = registrar.block_key(block);
+            registrar.block_container(&furnator, powah::container());
+            registrar.block_energy(&furnator, powah::furnator_battery(tier));
+            let kind = powah::declare(registrar, name);
+            let part = powah::FurnatorPart::new(Arc::clone(&self.queue), tier);
+            if let Err(error) = registrar.block_entity_part(&kind, part) {
+                context.refuse(&error.to_string());
+            }
+        }
         // Every energy cell tier: one buffer with the tier's own capacity and
         // per-side transfer (upstream's `AbstractEnergyStorage` over `EnergyConfig`).
         for (index, (block, _)) in powah::CELLS.into_iter().enumerate() {
@@ -93,14 +105,9 @@ impl Hooks for Mod {
             registrar.block_energy(&rod, powah::rod_battery(tier));
         }
 
-        // One type per block, and three Part types: the furnator burns, the orb
-        // fills and completes, a cell, a cable and a rod only queue their position
-        // for the move phase (the rod's move into its orb is one of its jobs).
-        let furnator_kind = powah::declare(registrar, powah::FURNATOR_TYPE);
-        let part = powah::FurnatorPart::new(Arc::clone(&self.queue));
-        if let Err(error) = registrar.block_entity_part(&furnator_kind, part) {
-            context.refuse(&error.to_string());
-        }
+        // The orb fills and completes; a cell, a cable and a rod only queue their
+        // position for the move phase (the rod's move into its orb is one of its
+        // jobs). Every furnator tier was declared above, where its tier's buffer is.
         let orb_kind = powah::declare(registrar, powah::ORB_TYPE);
         if let Err(error) = registrar.block_entity_part(&orb_kind, powah::OrbPart) {
             context.refuse(&error.to_string());
@@ -108,10 +115,12 @@ impl Hooks for Mod {
         for (_, name) in powah::CELLS {
             declare_idle(registrar, context, &self.queue, name);
         }
+        for (_, name) in powah::CABLES {
+            declare_idle(registrar, context, &self.queue, name);
+        }
         for (_, name) in powah::RODS {
             declare_idle(registrar, context, &self.queue, name);
         }
-        declare_idle(registrar, context, &self.queue, powah::CABLE_TYPE);
     }
 
     /// After the level's tick: run the queued moves, where every block entity is
